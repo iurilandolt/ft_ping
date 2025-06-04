@@ -1,0 +1,65 @@
+SETUP
+
+[IP Header]
+    |- Version (4)
+    |- IHL (4)
+    |- Type of Service (8)
+    |- Total Length (16)
+    |- ID (16)
+    |- Flags & Fragment Offset (16)
+    |- TTL (8)
+    |- Protocol (8)
+    |- Header Checksum (16)
+    |- Source IP (32)
+    |- Destination IP (32)
+
+[ICMP Header]
+    |- Type (8) - Type 8 for request, 0 for reply
+    |- Code (8)
+    |- Checksum (16)
+    |- ID (16)
+    |- Sequence Number (16)
+    |- Payload (optional)
+
+FLOW
+
+graph TD
+    A[Initialize] --> B[Parse IP]
+    B --> C[Create Raw Socket]
+    C --> D[Setup Signal Handler]
+    D --> E[Main Loop Start]
+    E --> F[Build ICMP Packet]
+    F --> G[Send Packet]
+    G --> H[Record Time]
+    H --> I[Receive Reply]
+    I --> J[Validate Reply]
+    J --> K[Calculate Stats]
+    K --> L{More Pings?}
+    L -->|Yes| E
+    L -->|No| M[Print Stats]
+
+METHODS
+
+init_ping()
+create_socket()
+setup_signal_handler()
+build_icmp_packet()
+send_ping()
+receive_ping()
+calculate_rtt()
+print_statistics()
+cleanup()	
+
+TRACKED DATA
+
+Packets transmitted
+Packets received
+Packet loss percentage
+Min/Avg/Max RTT
+Standard deviation
+
+
+https://www.rfc-editor.org/rfc/rfc791
+https://www.rfc-editor.org/rfc/rfc792
+https://www.rfc-editor.org/rfc/rfc1071
+https://www.rfc-editor.org/rfc/rfc3542

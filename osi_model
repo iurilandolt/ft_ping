@@ -1,0 +1,50 @@
+L7 APPLICATION
+├── HTTP, FTP, SMTP, DNS, SSH
+└── End-user services
+
+L6 PRESENTATION
+├── Encryption (SSL/TLS)
+└── Data formatting
+
+L5 SESSION
+└── Session handling
+
+L4 TRANSPORT
+├── TCP
+└── UDP
+
+   ICMP
+    ↓
+    Lives between L3-L4
+    ├── Error reporting
+    ├── Network diagnostics
+    └── Ping/traceroute
+
+L3 NETWORK
+├── IP (IPv4, IPv6)
+└── Routing
+
+L2 DATA LINK
+├── MAC addresses
+└── Ethernet frames
+
+L1 PHYSICAL
+└── Raw bits/signals
+
+////////////////////
+
+DATA ENCAPSULATION
+
+[L7] Application Data
+  ↓
+[L6] + Presentation Info
+  ↓
+[L5] + Session Info
+  ↓
+[L4] + TCP/UDP Header
+  ↓
+[L3] + IP Header
+  ↓
+[L2] + MAC Header/Trailer
+  ↓
+[L1] = Bits
