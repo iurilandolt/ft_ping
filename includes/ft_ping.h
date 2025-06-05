@@ -28,12 +28,14 @@ typedef struct s_ping_pkg {
 typedef struct s_ping_state {
 	t_ping_pkg packet;		// ping package structure
 	struct {
-		int sockfd;				// socket file descriptor
+		int sockfd;
 		char *target;
-		void *addr;			// pointer to address structure
-		struct sockaddr_in ipv4;   // IPv4 address
-		struct sockaddr_in6 ipv6;  // IPv6 address
-	
+		void *addr;                    // pointer to address structure
+		int family;                    // AF_INET or AF_INET6
+		int protocol;                  // IPPROTO_ICMP or IPPROTO_ICMPV6
+		socklen_t addr_len;            // sizeof(sockaddr_in) or sizeof(sockaddr_in6)
+		struct sockaddr_in ipv4;       // IPv4 address
+		struct sockaddr_in6 ipv6;
 	} conn;
 	struct {
         long packets_sent;
@@ -52,8 +54,6 @@ typedef struct s_ping_state {
         int timeout;     // -W flag (in seconds)
 	} opts;
 } t_ping_state;
-
-// DNS
 
 void handleSignals(int signum, siginfo_t *info, void *ptr);
 void setupSignals(void);
