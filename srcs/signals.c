@@ -2,14 +2,14 @@
 
 void handleSignals(int signum, siginfo_t *info, void *ptr) {
 	if (signum == SIGINT || signum == SIGTERM || signum == SIGQUIT) {
-		printf("\nReceived signal %d, exiting...\n", signum);
-		exit(0);
+		printf("\nReceived signal %d, exiting...\n", signum); // print exit stats
+		exit(0); // use ptr to access ping_sate struct and clean it
 	}
 	(void)info;
 	(void)ptr;
 }
 
-void setupSignals(void) {
+void setupSignals(void) { // add ptr to ping_sate struct
 	static struct sigaction handler;
 	handler.sa_sigaction = handleSignals;
 	sigemptyset(&handler.sa_mask);

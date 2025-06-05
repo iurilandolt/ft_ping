@@ -13,7 +13,7 @@ L4 TRANSPORT
 ├── TCP
 └── UDP
 
-   ICMP
+   ICMP(L3)
     ↓
     Lives between L3-L4
     ├── Error reporting

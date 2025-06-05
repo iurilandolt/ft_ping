@@ -63,3 +63,59 @@ https://www.rfc-editor.org/rfc/rfc791
 https://www.rfc-editor.org/rfc/rfc792
 https://www.rfc-editor.org/rfc/rfc1071
 https://www.rfc-editor.org/rfc/rfc3542
+
+
+DNS Resolution
+
+Program receives hostname "google.com"
+Calls DNS resolver to convert hostname to IP address
+Gets back one or more IP addresses (e.g., 142.250.x.x)
+Socket Creation
+
+Creates a raw socket with ICMP protocol
+Requires root privileges due to raw socket usage
+Sets socket options (TTL, timeout, etc.)
+
+ICMP Echo Request Preparation
+
+Constructs ICMP packet structure:
+Type (8 for echo request)
+Code (0)
+
+Checksum
+
+Identifier (usually process ID)
+Sequence number
+Optional payload data
+
+Main Loop
+
+For each ping:
+Records start time
+Sends ICMP Echo Request packet
+Waits for ICMP Echo Reply
+Records receive time
+Calculates round-trip time
+Updates statistics
+Waits 1 second before next ping
+Packet Reception
+
+Receives IP packet containing ICMP reply
+Validates:
+ICMP type (0 for echo reply)
+Identifier matches
+Checksum is correct
+Sequence number matches
+Statistics Tracking
+
+Maintains counters:
+Packets sent
+Packets received
+Min/Avg/Max round-trip times
+Packet loss percentage
+Signal Handling
+
+Catches interrupt signal (Ctrl+C)
+Prints final statistics
+Closes socket
+Exits cleanly

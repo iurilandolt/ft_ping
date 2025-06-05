@@ -1,0 +1,42 @@
+IP Header (/usr/include/netinet/ip.h)
+
+struct iphdr
+{
+#if defined (__LITTLE_ENDIAN_BITFIELD)
+    u_int8_t             ihl:4,      // Internet header length in 32-bit words
+                         version:4;  // IP version
+#elif defined (__BIG_ENDIAN_BITFIELD)
+    u_int8_t             version:4,
+                         ihl:4;
+#endif
+    u_int8_t             tos;        // Type of Service
+    u_int16_t            tot_len;    // Total Length
+    u_int16_t            id;         // Identification, Flags
+    u_int16_t            frag_off;   // Fragment Offset
+    u_int8_t             ttl;        // Time to Live
+    u_int8_t             protocol;   // Protocol (ICMP = 1)
+    u_int16_t            check;      // Header Checksum
+    u_int32_t            saddr;      // Source Address
+    u_int32_t            daddr;      // Destination Address
+};
+
+struct icmphdr
+{
+    u_int8_t             type;       // Message type
+    u_int8_t             code;       // Type sub-code
+    u_int16_t            checksum;   // Checksum of the ICMP message
+    union
+    {
+        struct
+        {
+            u_int16_t    id;         // Identifier to aid in matching echos
+            u_int16_t    sequence;   // Sequence number to aid in matching echos
+        }                echo;       // Echo datagram
+        u_int32_t        gateway;
+        struct
+        {
+            u_int16_t    __unused;   //__
+            u_int16_t    mtu;
+        }                frag;
+    }                    un;
+};
