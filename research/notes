@@ -70,6 +70,7 @@ DNS Resolution
 Program receives hostname "google.com"
 Calls DNS resolver to convert hostname to IP address
 Gets back one or more IP addresses (e.g., 142.250.x.x)
+
 Socket Creation
 
 Creates a raw socket with ICMP protocol
