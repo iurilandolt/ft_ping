@@ -35,7 +35,7 @@ typedef struct s_ping_state {
 		void *addr;                    // pointer to address structure
 		int family;                    // AF_INET or AF_INET6
 		int protocol;
-		int pid;                  // IPPROTO_ICMP or IPPROTO_ICMPV6
+		uint16_t pid;                  // IPPROTO_ICMP or IPPROTO_ICMPV6
 		socklen_t addr_len;            // sizeof(sockaddr_in) or sizeof(sockaddr_in6)
 		struct sockaddr_in ipv4;       // IPv4 address
 		struct sockaddr_in6 ipv6;
