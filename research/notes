@@ -65,6 +65,8 @@ https://www.rfc-editor.org/rfc/rfc1071
 https://www.rfc-editor.org/rfc/rfc3542
 
 
+INPUT PARSING
+
 DNS Resolution
 
 Program receives hostname "google.com"

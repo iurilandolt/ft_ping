@@ -8,9 +8,11 @@
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
+#include <errno.h>
 
 #include <sys/socket.h>
 #include <netinet/ip_icmp.h>
+#include <netinet/ip.h>
 #include <netinet/in.h>
 
 #include <netdb.h>
@@ -32,7 +34,8 @@ typedef struct s_ping_state {
 		char *target;
 		void *addr;                    // pointer to address structure
 		int family;                    // AF_INET or AF_INET6
-		int protocol;                  // IPPROTO_ICMP or IPPROTO_ICMPV6
+		int protocol;
+		int pid;                  // IPPROTO_ICMP or IPPROTO_ICMPV6
 		socklen_t addr_len;            // sizeof(sockaddr_in) or sizeof(sockaddr_in6)
 		struct sockaddr_in ipv4;       // IPv4 address
 		struct sockaddr_in6 ipv6;
@@ -57,6 +60,17 @@ typedef struct s_ping_state {
 
 void handleSignals(int signum, siginfo_t *info, void *ptr);
 void setupSignals(void);
+
+void *get_addr_ptr(t_ping_state *state);
+int resolveHost(t_ping_state *state, char **argv);
+int createSocket(t_ping_state *state, char **argv);
+int send_ping(t_ping_state *state);
+int receive_ping(t_ping_state *state, uint16_t sequence);
+
+void create_icmp_packet(t_ping_state *state, uint16_t sequence);
+uint16_t calculate_checksum(t_ping_state *state);
+void fill_packet_data(t_ping_state *state);
+int parse_icmp_reply(char *buffer, ssize_t bytes_received, uint16_t expected_sequence, t_ping_state *state);
 
 #endif
 

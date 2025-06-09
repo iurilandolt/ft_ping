@@ -1,5 +1,28 @@
 #include "../includes/ft_ping.h"
 
+void print_stats(t_ping_state *state) {
+    struct timeval end_time;
+    gettimeofday(&end_time, NULL);
+    
+    double total_time = (end_time.tv_sec - state->stats.start_time.tv_sec) * 1000.0 + 
+                       (end_time.tv_usec - state->stats.start_time.tv_usec) / 1000.0;
+    
+    char addr_str[INET6_ADDRSTRLEN];
+    inet_ntop(state->conn.family, get_addr_ptr(state), addr_str, INET6_ADDRSTRLEN);
+    
+    printf("\n--- %s ping statistics ---\n", state->conn.target);
+    printf("%ld packets transmitted, %ld received, %.0f%% packet loss, time %.0fms\n",
+           state->stats.packets_sent, state->stats.packets_received,
+           ((double)(state->stats.packets_sent - state->stats.packets_received) / 
+            state->stats.packets_sent) * 100.0, total_time);
+    
+    if (state->stats.packets_received > 0) {
+        state->stats.avg_rtt = state->stats.sum_rtt / state->stats.packets_received;
+        printf("rtt min/avg/max = %.3f/%.3f/%.3f ms\n", 
+               state->stats.min_rtt, state->stats.avg_rtt, state->stats.max_rtt);
+    }
+}
+
 int parseArgs(t_ping_state *state, int argc, char **argv) {
     int opt;
     
@@ -60,84 +83,45 @@ int parseArgs(t_ping_state *state, int argc, char **argv) {
     return 0;
 }
 
-void *get_addr_ptr(t_ping_state *state) {
-	return (state->conn.family == AF_INET) ? 
-		(void*)&((struct sockaddr_in*)state->conn.addr)->sin_addr :
-		(void*)&((struct sockaddr_in6*)state->conn.addr)->sin6_addr;
-}
-
-int resolveHost(t_ping_state *state, char **argv) {
-	struct addrinfo hints, *result;
-	
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_RAW;
-	hints.ai_protocol = IPPROTO_ICMP;
-	
-	if (getaddrinfo(state->conn.target, NULL, &hints, &result) != 0) {
-		fprintf(stderr, "%s: %s: Name or service not known\n", 
-				argv[0], state->conn.target);
-		return 1;
-	}
-	
-	if (result->ai_family == AF_INET) {
-		memcpy(&state->conn.ipv4, result->ai_addr, sizeof(struct sockaddr_in));
-		state->conn.addr = &state->conn.ipv4;
-		state->conn.family = AF_INET;
-		state->conn.protocol = IPPROTO_ICMP;
-		state->conn.addr_len = sizeof(struct sockaddr_in);
-	} else if (result->ai_family == AF_INET6) {
-		memcpy(&state->conn.ipv6, result->ai_addr, sizeof(struct sockaddr_in6));
-		state->conn.addr = &state->conn.ipv6;
-		state->conn.family = AF_INET6;
-		state->conn.protocol = IPPROTO_ICMPV6;
-		state->conn.addr_len = sizeof(struct sockaddr_in6);
-	}
-
-	freeaddrinfo(result);
-	
-	if (state->opts.verbose) {
-		char addr_str[INET6_ADDRSTRLEN];
-		inet_ntop(state->conn.family, get_addr_ptr(state), addr_str, INET6_ADDRSTRLEN);
-		printf("PING %s (%s): %lu data bytes\n", 
-			state->conn.target, addr_str, 
-			state->opts.psize - sizeof(struct icmphdr));
-	}
-	
-	return 0;
-}
-
-int createSocket(t_ping_state *state, char **argv) {
-	state->conn.sockfd = socket(state->conn.family, SOCK_RAW, state->conn.protocol);
-	
-	if (state->conn.sockfd < 0) {
-		fprintf(stderr, "%s: %s: Cannot create socket\n", argv[0], state->conn.target);
-		return 1;
-	}
-
-	
-	// TODO: Set socket options (TTL, timeout, etc.)
-	
-	return 0;
-}
-
-
 int main(int argc, char **argv) {
 	t_ping_state state;
 	
-	if (parseArgs(&state, argc, argv) || resolveHost(&state, argv)) {
+	if (parseArgs(&state, argc, argv) || 
+		resolveHost(&state, argv) || 
+		createSocket(&state, argv)) {
 		return 1;
 	}
 
-	if (createSocket(&state, argv)) {
-		return 1;
+	setupSignals();
+	
+	// Initialize stats
+	memset(&state.stats, 0, sizeof(state.stats));
+	gettimeofday(&state.stats.start_time, NULL);
+	
+	// Main ping loop
+	uint16_t sequence = 1;
+	while (state.opts.count == -1 || sequence <= state.opts.count) {
+		// Create and send ping packet
+		create_icmp_packet(&state, sequence);
+		
+		if (send_ping(&state)) {
+			state.stats.packets_sent++;
+			
+			// Wait for reply or timeout
+			if (receive_ping(&state, sequence)) {
+				state.stats.packets_received++;
+			}
+		}
+		
+		sequence++;
+		
+		// Sleep 1 second between pings (unless preload)
+		if (state.opts.preload == 0 || sequence > state.opts.preload) {
+			sleep(1);
+		}
 	}
 	
-	setupSignals();
-	while (1) {
-		;
-	}
-
-
-	return(0);
+	print_stats(&state);
+	close(state.conn.sockfd);
+	return 0;
 }
