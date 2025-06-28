@@ -6,10 +6,7 @@ void print_stats(t_ping_state *state) {
     
     double total_time = (end_time.tv_sec - state->stats.start_time.tv_sec) * 1000.0 + 
                        (end_time.tv_usec - state->stats.start_time.tv_usec) / 1000.0;
-    
-    // char addr_str[INET6_ADDRSTRLEN];
-    // inet_ntop(state->conn.family, get_addr_ptr(state), state->conn.addr_str, INET6_ADDRSTRLEN);
-    
+        
     printf("\n--- %s ping statistics ---\n", state->conn.target);
     printf("%ld packets transmitted, %ld received, %.0f%% packet loss, time %.0fms\n",
            state->stats.packets_sent, state->stats.packets_received,
@@ -21,6 +18,34 @@ void print_stats(t_ping_state *state) {
         printf("rtt min/avg/max = %.3f/%.3f/%.3f ms\n", 
                state->stats.min_rtt, state->stats.avg_rtt, state->stats.max_rtt);
     }
+}
+
+void print_verbose_info(t_ping_state *state) {
+    if (!state->opts.verbose) {
+        return;
+    }
+    
+    // Get socket type from our actual socket
+    int socktype;
+    socklen_t optlen = sizeof(socktype);
+    getsockopt(state->conn.sockfd, SOL_SOCKET, SO_TYPE, &socktype, &optlen);
+    
+    const char *socktype_str = (socktype == SOCK_RAW) ? "SOCK_RAW" : 
+                              (socktype == SOCK_DGRAM) ? "SOCK_DGRAM" : "UNKNOWN";
+    
+    // Use the family we already have in the struct
+    if (state->conn.family == AF_INET) {
+        printf("ping: sock4.fd: %d (socktype: %s), sock6.fd: -1 (socktype: SOCK_RAW), hints.ai_family: AF_UNSPEC\n",
+               state->conn.sockfd, socktype_str);
+    } else {
+        printf("ping: sock4.fd: -1 (socktype: SOCK_RAW), sock6.fd: %d (socktype: %s), hints.ai_family: AF_UNSPEC\n",
+               state->conn.sockfd, socktype_str);
+    }
+    
+    const char *family_str = (state->conn.family == AF_INET) ? "AF_INET" : "AF_INET6";
+    
+    printf("\nai->ai_family: %s, ai->ai_canonname: '%s'\n",
+           family_str, state->conn.target);
 }
 
 int parseArgs(t_ping_state *state, int argc, char **argv) {
@@ -98,8 +123,8 @@ int main(int argc, char **argv) {
 	memset(&state.stats, 0, sizeof(state.stats));
 	gettimeofday(&state.stats.start_time, NULL);
 	
-    // char addr_str[INET6_ADDRSTRLEN];
-    // inet_ntop(state.conn.family, get_addr_ptr(&state), addr_str, INET6_ADDRSTRLEN);
+	print_verbose_info(&state);
+	
     printf("PING %s (%s) %zu(%zu) bytes of data.\n", 
            state.conn.target, state.conn.addr_str, 
            state.opts.psize - sizeof(struct icmphdr),  
