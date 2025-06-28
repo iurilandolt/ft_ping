@@ -7,8 +7,8 @@ void print_stats(t_ping_state *state) {
     double total_time = (end_time.tv_sec - state->stats.start_time.tv_sec) * 1000.0 + 
                        (end_time.tv_usec - state->stats.start_time.tv_usec) / 1000.0;
     
-    char addr_str[INET6_ADDRSTRLEN];
-    inet_ntop(state->conn.family, get_addr_ptr(state), addr_str, INET6_ADDRSTRLEN);
+    // char addr_str[INET6_ADDRSTRLEN];
+    // inet_ntop(state->conn.family, get_addr_ptr(state), state->conn.addr_str, INET6_ADDRSTRLEN);
     
     printf("\n--- %s ping statistics ---\n", state->conn.target);
     printf("%ld packets transmitted, %ld received, %.0f%% packet loss, time %.0fms\n",
@@ -39,7 +39,7 @@ int parseArgs(t_ping_state *state, int argc, char **argv) {
                 break;
             case 'c':
                 state->opts.count = atoi(optarg);
-                if (state->opts.count <= 0) {
+                if (state->opts.count <= 0) { // set a max value for count?
                     fprintf(stderr, "%s: bad number of packets to transmit\n", argv[0]);
                     return 1;
                 }
@@ -92,12 +92,19 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	setupSignals();
+	setupSignals(&state);
 	
 	// Initialize stats
 	memset(&state.stats, 0, sizeof(state.stats));
 	gettimeofday(&state.stats.start_time, NULL);
 	
+    // char addr_str[INET6_ADDRSTRLEN];
+    // inet_ntop(state.conn.family, get_addr_ptr(&state), addr_str, INET6_ADDRSTRLEN);
+    printf("PING %s (%s) %zu(%zu) bytes of data.\n", 
+           state.conn.target, state.conn.addr_str, 
+           state.opts.psize - sizeof(struct icmphdr),  
+           state.opts.psize + 20); // 84 total bytes (ICMP + IP)
+
 	// Main ping loop
 	uint16_t sequence = 1;
 	while (state.opts.count == -1 || sequence <= state.opts.count) {

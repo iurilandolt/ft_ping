@@ -7,6 +7,7 @@ void *get_addr_ptr(t_ping_state *state) {
 		(void*)&((struct sockaddr_in6*)state->conn.addr)->sin6_addr;
 }
 
+
 int resolveHost(t_ping_state *state, char **argv) {
 	struct addrinfo hints, *result;
 	
@@ -34,19 +35,16 @@ int resolveHost(t_ping_state *state, char **argv) {
 		state->conn.protocol = IPPROTO_ICMPV6;
 		state->conn.addr_len = sizeof(struct sockaddr_in6);
 	}
-
 	freeaddrinfo(result);
-	
-	if (state->opts.verbose) {
-		char addr_str[INET6_ADDRSTRLEN];
-		inet_ntop(state->conn.family, get_addr_ptr(state), addr_str, INET6_ADDRSTRLEN);
-		printf("PING %s (%s): %lu data bytes\n", 
-			state->conn.target, addr_str, 
-			state->opts.psize - sizeof(struct icmphdr));
-	}
-	
+	inet_ntop(state->conn.family, get_addr_ptr(state), state->conn.addr_str, INET6_ADDRSTRLEN);
+	// if (state->opts.verbose) {
+	// 	printf("PING %s (%s): %lu data bytes\n", 
+	// 		state->conn.target, state->conn.addr_str, 
+	// 		state->opts.psize - sizeof(struct icmphdr));
+	// }
 	return 0;
 }
+
 
 int createSocket(t_ping_state *state, char **argv) {
 	state->conn.sockfd = socket(state->conn.family, SOCK_RAW, state->conn.protocol);
@@ -55,12 +53,19 @@ int createSocket(t_ping_state *state, char **argv) {
 		fprintf(stderr, "%s: %s: Cannot create socket\n", argv[0], state->conn.target);
 		return 1;
 	}
-
+	// Set receive timeout on the socket
+	struct timeval timeout = {state->opts.timeout, 0};
+	if (setsockopt(state->conn.sockfd, SOL_SOCKET, SO_RCVTIMEO, 
+				&timeout, sizeof(timeout)) < 0) {
+		fprintf(stderr, "setsockopt: %s\n", strerror(errno));
+		return 1;
+	}
 	
 	// TODO: Set socket options that have not been set in parsing (TTL, timeout, etc.)
 	
 	return 0;
 }
+
 
 int send_ping(t_ping_state *state) {	
 	ssize_t bytes_sent = sendto(state->conn.sockfd, 
@@ -86,18 +91,9 @@ int send_ping(t_ping_state *state) {
 int receive_ping(t_ping_state *state, uint16_t expected_sequence) {
 	char buffer[1024]; // why?
 	struct sockaddr_storage from;
-	socklen_t fromlen = sizeof(from);
-	
-	// Set receive timeout on the socket
-	struct timeval timeout = {state->opts.timeout, 0};
-	if (setsockopt(state->conn.sockfd, SOL_SOCKET, SO_RCVTIMEO, 
-				&timeout, sizeof(timeout)) < 0) {
-		fprintf(stderr, "setsockopt: %s\n", strerror(errno));
-		return 0;
-	}
-	
+	socklen_t fromlen = sizeof(from);	
 	ssize_t bytes_received = recvfrom(state->conn.sockfd, buffer, sizeof(buffer), 
-									0, (struct sockaddr*)&from, &fromlen);
+											0, (struct sockaddr*)&from, &fromlen);
 	
 	if (bytes_received < 0) {
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {

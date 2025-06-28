@@ -1,16 +1,21 @@
 #include "../includes/ft_ping.h"
 
+static t_ping_state *state_ptr = NULL; 
+
 void handleSignals(int signum, siginfo_t *info, void *ptr) {
 	if (signum == SIGINT || signum == SIGTERM || signum == SIGQUIT) {
-		printf("\nReceived signal %d, exiting...\n", signum); // print exit stats
-		exit(0); // use ptr to access ping_sate struct and clean it
+		printf("\nReceived signal %d, exiting...\n", signum);
+		close(state_ptr->conn.sockfd); 
+		state_ptr = NULL; 
+		exit(0); 
 	}
 	(void)info;
 	(void)ptr;
 }
 
-void setupSignals(void) { // add ptr to ping_sate struct
+void setupSignals(t_ping_state *state) { 
 	static struct sigaction handler;
+	state_ptr = state; 
 	handler.sa_sigaction = handleSignals;
 	sigemptyset(&handler.sa_mask);
 	handler.sa_flags = 0;

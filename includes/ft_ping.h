@@ -39,6 +39,7 @@ typedef struct s_ping_state {
 		socklen_t addr_len;            // sizeof(sockaddr_in) or sizeof(sockaddr_in6)
 		struct sockaddr_in ipv4;       // IPv4 address
 		struct sockaddr_in6 ipv6;
+		char addr_str[INET6_ADDRSTRLEN];
 	} conn;
 	struct {
         long packets_sent;
@@ -59,7 +60,7 @@ typedef struct s_ping_state {
 } t_ping_state;
 
 void handleSignals(int signum, siginfo_t *info, void *ptr);
-void setupSignals(void);
+void setupSignals(t_ping_state *state);
 
 void *get_addr_ptr(t_ping_state *state);
 int resolveHost(t_ping_state *state, char **argv);
