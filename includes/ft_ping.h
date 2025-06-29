@@ -30,8 +30,14 @@ typedef struct s_ping_pkg {
     char msg[];
 } t_ping_pkg;
 
+typedef struct s_packet_entry {
+    uint16_t sequence;
+    t_ping_pkg *packet;
+    struct s_packet_entry *next;
+} t_packet_entry;
+
 typedef struct s_ping_state {
-	t_ping_pkg *packet;		// ping package structure
+	t_packet_entry *sent_packets;  // Linked list of sent packets
 	struct {
 		int sockfd;
 		char *target;
@@ -69,15 +75,17 @@ void setupSignals(t_ping_state *state);
 void *get_addr_ptr(t_ping_state *state);
 int resolveHost(t_ping_state *state, char **argv);
 int createSocket(t_ping_state *state, char **argv);
-int send_ping(t_ping_state *state);
+int send_ping(t_ping_state *state, uint16_t sequence);
 int receive_ping(t_ping_state *state, uint16_t sequence);
 // packet
 int allocate_packet(t_ping_state *state);
 void free_packet(t_ping_state *state);
 void create_icmp_packet(t_ping_state *state, uint16_t sequence);
-uint16_t calculate_checksum(t_ping_state *state);
-void fill_packet_data(t_ping_state *state);
+uint16_t calculate_checksum(t_ping_state *state, uint16_t sequence);
+void fill_packet_data(t_ping_state *state, uint16_t sequence);
 int parse_icmp_reply(char *buffer, ssize_t bytes_received, uint16_t expected_sequence, t_ping_state *state);
+t_packet_entry* find_sent_packet(t_ping_state *state, uint16_t sequence);
+void remove_sent_packet(t_ping_state *state, uint16_t sequence);
 // io
 int parseArgs(t_ping_state *state, int argc, char **argv);
 void print_verbose_info(t_ping_state *state);

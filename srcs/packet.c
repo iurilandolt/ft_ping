@@ -1,7 +1,26 @@
 #include "../includes/ft_ping.h"
 
 void create_icmp_packet(t_ping_state *state, uint16_t sequence) {
-	struct icmphdr *icmp = &state->packet->header;
+	// Allocate new packet entry
+	t_packet_entry *entry = malloc(sizeof(t_packet_entry));
+	if (!entry) {
+		fprintf(stderr, "malloc failed for packet entry\n");
+		return;
+	}
+	
+	// Allocate the actual packet
+	entry->packet = malloc(state->opts.psize);
+	if (!entry->packet) {
+		fprintf(stderr, "malloc failed for packet %d\n", sequence);
+		free(entry);
+		return;
+	}
+	
+	entry->sequence = sequence;
+	entry->next = state->sent_packets;
+	state->sent_packets = entry; // Add to front of list
+	
+	struct icmphdr *icmp = &entry->packet->header;
 	
 	state->conn.pid = getpid();
 	icmp->code = 0;                
@@ -9,8 +28,8 @@ void create_icmp_packet(t_ping_state *state, uint16_t sequence) {
 	icmp->un.echo.id = htons(state->conn.pid); 
 	icmp->un.echo.sequence = htons(sequence);
 	icmp->checksum = 0;               
-	fill_packet_data(state);
-	icmp->checksum = calculate_checksum(state);
+	fill_packet_data(state, sequence);
+	icmp->checksum = calculate_checksum(state, sequence);
 }
 
 int allocate_packet(t_ping_state *state) {
@@ -20,23 +39,28 @@ int allocate_packet(t_ping_state *state) {
     
     state->opts.psize += header_size;
     
-    state->packet = malloc(state->opts.psize);
-    if (!state->packet) {
-        perror("malloc");
-        return 1;
-    }
+    // Initialize sent packets list
+    state->sent_packets = NULL;
+    
     return 0;
 }
 
 void free_packet(t_ping_state *state) {
-    if (state->packet) {
-        free(state->packet);
-        state->packet = NULL;
+    t_packet_entry *current = state->sent_packets;
+    while (current) {
+        t_packet_entry *next = current->next;
+        free(current->packet);
+        free(current);
+        current = next;
     }
+    state->sent_packets = NULL;
 }
 
-uint16_t calculate_checksum(t_ping_state *state) {
-	uint16_t *ptr = (uint16_t*)state->packet;
+uint16_t calculate_checksum(t_ping_state *state, uint16_t sequence) {
+	t_packet_entry *entry = find_sent_packet(state, sequence);
+	if (!entry) return 0;
+	
+	uint16_t *ptr = (uint16_t*)entry->packet;
 	int bytes = state->opts.psize;
 	uint32_t sum = 0;
 	
@@ -59,7 +83,10 @@ uint16_t calculate_checksum(t_ping_state *state) {
 	return ~sum;
 }
 
-void fill_packet_data(t_ping_state *state) {
+void fill_packet_data(t_ping_state *state, uint16_t sequence) {
+    t_packet_entry *entry = find_sent_packet(state, sequence);
+    if (!entry) return;
+    
     size_t icmp_header_size = (state->conn.family == AF_INET) ? 
                              sizeof(struct icmphdr) : 
                              sizeof(struct icmp6_hdr);
@@ -68,15 +95,15 @@ void fill_packet_data(t_ping_state *state) {
     if (data_size >= sizeof(struct timeval)) {
         struct timeval tv;
         gettimeofday(&tv, NULL);
-        memcpy(&state->packet->msg, &tv, sizeof(tv));
+        memcpy(&entry->packet->msg, &tv, sizeof(tv));
         
 
         for (size_t i = sizeof(tv); i < data_size; i++) {
-            state->packet->msg[i] = 0x10 + (i % 48);
+            entry->packet->msg[i] = 0x10 + (i % 48);
         }
     } else {
         for (size_t i = 0; i < data_size; i++) {
-            state->packet->msg[i] = 0x10 + (i % 48);
+            entry->packet->msg[i] = 0x10 + (i % 48);
         }
     }
 }
@@ -144,4 +171,29 @@ int parse_icmp_reply(char *buffer, ssize_t bytes_received, uint16_t expected_seq
 	print_ping_reply(state, icmp_size, icmp_header, ttl, rtt);
 	
 	return 0;
+}
+
+t_packet_entry* find_sent_packet(t_ping_state *state, uint16_t sequence) {
+    t_packet_entry *current = state->sent_packets;
+    while (current) {
+        if (current->sequence == sequence) {
+            return current;
+        }
+        current = current->next;
+    }
+    return NULL;
+}
+
+void remove_sent_packet(t_ping_state *state, uint16_t sequence) {
+    t_packet_entry **current = &state->sent_packets;
+    while (*current) {
+        if ((*current)->sequence == sequence) {
+            t_packet_entry *to_remove = *current;
+            *current = (*current)->next;
+            free(to_remove->packet);
+            free(to_remove);
+            return;
+        }
+        current = &(*current)->next;
+    }
 }

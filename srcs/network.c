@@ -47,19 +47,32 @@ int createSocket(t_ping_state *state, char **argv) {
 		fprintf(stderr, "%s: %s: Cannot create socket\n", argv[0], state->conn.target);
 		return 1;
 	}
-	struct timeval timeout = {state->opts.timeout, 0}; // why 0 seconds?
-	if (setsockopt(state->conn.sockfd, SOL_SOCKET, SO_RCVTIMEO, 
-				&timeout, sizeof(timeout)) < 0) {
-		fprintf(stderr, "setsockopt: %s\n", strerror(errno));
+	// struct timeval timeout = {state->opts.timeout, 0}; // why 0 seconds?
+	// if (setsockopt(state->conn.sockfd, SOL_SOCKET, SO_RCVTIMEO, 
+	// 			&timeout, sizeof(timeout)) < 0) {
+	// 	fprintf(stderr, "setsockopt: %s\n", strerror(errno));
+	// 	return 1;
+	// }
+
+	int flags = fcntl(state->conn.sockfd, F_GETFL, 0);
+	if (flags < 0 || fcntl(state->conn.sockfd, F_SETFL, flags | O_NONBLOCK) < 0) {
+		fprintf(stderr, "fcntl: %s\n", strerror(errno));
 		return 1;
-	}
+	}	
+
 	return 0;
 }
 
 
-int send_ping(t_ping_state *state) {	
+int send_ping(t_ping_state *state, uint16_t sequence) {
+	t_packet_entry *entry = find_sent_packet(state, sequence);
+	if (!entry) {
+		fprintf(stderr, "Packet %d not found\n", sequence);
+		return 1;
+	}
+	
 	ssize_t bytes_sent = sendto(state->conn.sockfd, 
-							   state->packet, 
+							   entry->packet, 
 							   state->opts.psize, 
 							   0,
 							   (struct sockaddr*)state->conn.addr, 
@@ -77,25 +90,51 @@ int send_ping(t_ping_state *state) {
 }
 
 int receive_ping(t_ping_state *state, uint16_t expected_sequence) {
-    char buffer[1024];
-    struct sockaddr_storage from;
-    socklen_t fromlen = sizeof(from);
+	char buffer[1024];
+	struct sockaddr_storage from;
+	socklen_t fromlen = sizeof(from);
 
-    while (1) {
-        ssize_t bytes_received = recvfrom(state->conn.sockfd, buffer, sizeof(buffer), 0, (struct sockaddr*)&from, &fromlen);
-        
-        if (bytes_received < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // fprintf(stderr, "Timeout waiting for reply\n");
-                return 1;
-            } else {
-                fprintf(stderr, "recvfrom: %s\n", strerror(errno));
-                return 1;
-            }
-        }
-        
-        if (parse_icmp_reply(buffer, bytes_received, expected_sequence, state) == 0) {
-            return 0;
-        }
-    }
+	while (1) {
+		ssize_t bytes_received = recvfrom(state->conn.sockfd, buffer, sizeof(buffer), 0, (struct sockaddr*)&from, &fromlen);
+		
+		if (bytes_received < 0) {
+			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				// fprintf(stderr, "Timeout waiting for reply\n");
+				return 1;
+			} else {
+				fprintf(stderr, "recvfrom: %s\n", strerror(errno));
+				return 1;
+			}
+		}
+		
+		if (parse_icmp_reply(buffer, bytes_received, expected_sequence, state) == 0) {
+			return 0;
+		}
+	}
 }
+
+/*
+int receive_ping(t_ping_state *state, uint16_t expected_sequence) {
+	char buffer[1024];
+	struct sockaddr_storage from;
+	socklen_t fromlen = sizeof(from);
+
+	while (1) {
+		ssize_t bytes_received = recvfrom(state->conn.sockfd, buffer, sizeof(buffer), 0, (struct sockaddr*)&from, &fromlen);
+		
+		if (bytes_received < 0) {
+			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				// fprintf(stderr, "Timeout waiting for reply\n");
+				return 1;
+			} else {
+				fprintf(stderr, "recvfrom: %s\n", strerror(errno));
+				return 1;
+			}
+		}
+		
+		if (parse_icmp_reply(buffer, bytes_received, expected_sequence, state) == 0) {
+			return 0;
+		}
+	}
+}
+*/
