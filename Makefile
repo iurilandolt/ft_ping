@@ -4,7 +4,7 @@ SRCS_DIR = srcs
 SRCS = $(wildcard $(SRCS_DIR)/*.c)
 
 RM = rm -f
-CFLAGS = -Wall -Wextra -Werror -Wshadow
+CFLAGS = -g -Wall -Wextra -Werror -Wshadow
 SFLAGS = -fsanitize=address
 C = cc
 INCLUDES = -I includes

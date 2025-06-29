@@ -9,27 +9,27 @@
 #include <unistd.h>
 #include <signal.h>
 #include <errno.h>
+#include <limits.h>
+#include <sys/time.h>
 
 #include <sys/socket.h>
 #include <netinet/ip_icmp.h>
 #include <netinet/icmp6.h>
 #include <netinet/ip.h>
 #include <netinet/in.h>
-
 #include <netdb.h>
 #include <arpa/inet.h>
 
-#include <sys/time.h>
 
 #define PING_PKT_S 64			// ping packet size
 
 typedef struct s_ping_pkg {
-	 struct icmphdr header;
-	 char msg[PING_PKT_S - sizeof(struct icmphdr)]; // packet size(64) - size of icmps struct(8) = 56 bytes for message
+    struct icmphdr header;
+    char msg[];
 } t_ping_pkg;
 
 typedef struct s_ping_state {
-	t_ping_pkg packet;		// ping package structure
+	t_ping_pkg *packet;		// ping package structure
 	struct {
 		int sockfd;
 		char *target;
@@ -60,19 +60,26 @@ typedef struct s_ping_state {
 	} opts;
 } t_ping_state;
 
+// signals
 void handleSignals(int signum, siginfo_t *info, void *ptr);
 void setupSignals(t_ping_state *state);
-
+// network
 void *get_addr_ptr(t_ping_state *state);
 int resolveHost(t_ping_state *state, char **argv);
 int createSocket(t_ping_state *state, char **argv);
 int send_ping(t_ping_state *state);
 int receive_ping(t_ping_state *state, uint16_t sequence);
-
+// packet
+int allocate_packet(t_ping_state *state);
+void free_packet(t_ping_state *state);
 void create_icmp_packet(t_ping_state *state, uint16_t sequence);
 uint16_t calculate_checksum(t_ping_state *state);
 void fill_packet_data(t_ping_state *state);
 int parse_icmp_reply(char *buffer, ssize_t bytes_received, uint16_t expected_sequence, t_ping_state *state);
+// io
+int parseArgs(t_ping_state *state, int argc, char **argv);
+void print_verbose_info(t_ping_state *state);
+void print_stats(t_ping_state *state);
 
 #endif
 

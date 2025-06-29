@@ -15,41 +15,31 @@ int resolveHost(t_ping_state *state, char **argv) {
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_RAW;
 	// hints.ai_protocol = IPPROTO_ICMP;
-	
 	if (getaddrinfo(state->conn.target, NULL, &hints, &result) != 0) {
 		fprintf(stderr, "%s: %s: Name or service not known\n", 
 				argv[0], state->conn.target);
 		return 1;
 	}
-	
 	if (result->ai_family == AF_INET) {
 		memcpy(&state->conn.ipv4, result->ai_addr, sizeof(struct sockaddr_in));
 		state->conn.addr = &state->conn.ipv4;
 		state->conn.family = AF_INET;
-		state->conn.protocol = IPPROTO_ICMP;
+		// state->conn.protocol = IPPROTO_ICMP;
 		state->conn.addr_len = sizeof(struct sockaddr_in);
 	} else if (result->ai_family == AF_INET6) {
 		memcpy(&state->conn.ipv6, result->ai_addr, sizeof(struct sockaddr_in6));
 		state->conn.addr = &state->conn.ipv6;
 		state->conn.family = AF_INET6;
-		state->conn.protocol = IPPROTO_ICMPV6;
+		// state->conn.protocol = IPPROTO_ICMPV6;
 		state->conn.addr_len = sizeof(struct sockaddr_in6);
 	}
-	freeaddrinfo(result);
 	inet_ntop(state->conn.family, get_addr_ptr(state), state->conn.addr_str, INET6_ADDRSTRLEN);
-
-    // if (state->opts.verbose) {
-    //     printf("ai->ai_family: %s, ai->ai_canonname: '%s'\n",
-    //            (result->ai_family == AF_INET) ? "AF_INET" : "AF_INET6",
-    //            result->ai_canonname ? result->ai_canonname : state->conn.target);
-    // }
-
+	freeaddrinfo(result);
 	return 0;
 }
 
 
 int createSocket(t_ping_state *state, char **argv) {
-
 	state->conn.protocol = (state->conn.family == AF_INET) ? IPPROTO_ICMP : IPPROTO_ICMPV6;
 	state->conn.sockfd = socket(state->conn.family, SOCK_RAW, state->conn.protocol);
 	
@@ -57,75 +47,53 @@ int createSocket(t_ping_state *state, char **argv) {
 		fprintf(stderr, "%s: %s: Cannot create socket\n", argv[0], state->conn.target);
 		return 1;
 	}
-
-	// Set receive timeout on the socket
-	struct timeval timeout = {state->opts.timeout, 0};
+	struct timeval timeout = {state->opts.timeout, 0}; // why 0 seconds?
 	if (setsockopt(state->conn.sockfd, SOL_SOCKET, SO_RCVTIMEO, 
 				&timeout, sizeof(timeout)) < 0) {
 		fprintf(stderr, "setsockopt: %s\n", strerror(errno));
 		return 1;
 	}
-	
-    // if (state->opts.verbose) {
-    //     printf("ping: sock%d.fd: %d (socktype: SOCK_RAW)\n",
-    //            (state->conn.family == AF_INET) ? 4 : 6,
-    //            state->conn.sockfd);
-    // }
-
-	// TODO: Set socket options that have not been set in parsing (TTL, timeout, etc.)
-	
 	return 0;
 }
 
 
 int send_ping(t_ping_state *state) {	
 	ssize_t bytes_sent = sendto(state->conn.sockfd, 
-                               &state->packet, 
-                               state->opts.psize, 
-                               0,
-                               (struct sockaddr*)state->conn.addr, 
-                               state->conn.addr_len);
-    
-    if (bytes_sent < 0) {
-        fprintf(stderr, "sendto: %s\n", strerror(errno));
-        return 0;
-    }
-    if ((size_t)bytes_sent != state->opts.psize) {
-        fprintf(stderr, "sendto: partial packet sent (%zd of %zu bytes)\n", 
-                bytes_sent, state->opts.psize);
-        return 0;
-    }
-    return 1;
+							   state->packet, 
+							   state->opts.psize, 
+							   0,
+							   (struct sockaddr*)state->conn.addr, 
+							   state->conn.addr_len);
+	if (bytes_sent < 0) {
+		fprintf(stderr, "sendto: %s\n", strerror(errno));
+		return 0;
+	}
+	if ((size_t)bytes_sent != state->opts.psize) {
+		fprintf(stderr, "sendto: partial packet sent (%zd of %zu bytes)\n", 
+				bytes_sent, state->opts.psize);
+		return 0;
+	}
+	return 1;
 }
 
 int receive_ping(t_ping_state *state, uint16_t expected_sequence) {
     char buffer[1024];
     struct sockaddr_storage from;
     socklen_t fromlen = sizeof(from);
-    struct timeval start_time, current_time;
 
-    gettimeofday(&start_time, NULL);
     while (1) {
-        gettimeofday(&current_time, NULL);
-        double elapsed = (current_time.tv_sec - start_time.tv_sec) + 
-                        (current_time.tv_usec - start_time.tv_usec) / 1000000.0;
-        
-        if (elapsed > state->opts.timeout) {
-            fprintf(stderr, "Timeout waiting for reply\n");
-            return 0;
-        }
-        
-        ssize_t bytes_received = recvfrom(state->conn.sockfd, buffer, sizeof(buffer), 
-                                         0, (struct sockaddr*)&from, &fromlen);
+        ssize_t bytes_received = recvfrom(state->conn.sockfd, buffer, sizeof(buffer), 0, (struct sockaddr*)&from, &fromlen);
         
         if (bytes_received < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                continue; // Keep trying until our timeout
+                fprintf(stderr, "Timeout waiting for reply\n");
+                return 0;
             } else {
                 fprintf(stderr, "recvfrom: %s\n", strerror(errno));
                 return 0;
             }
         }
+        
         if (parse_icmp_reply(buffer, bytes_received, expected_sequence, state) == 0) {
             return 1;
         }

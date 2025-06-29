@@ -5,7 +5,9 @@ static t_ping_state *state_ptr = NULL;
 void handleSignals(int signum, siginfo_t *info, void *ptr) {
 	if (signum == SIGINT || signum == SIGTERM || signum == SIGQUIT) {
 		printf("\nReceived signal %d, exiting...\n", signum);
-		close(state_ptr->conn.sockfd); 
+		close(state_ptr->conn.sockfd);
+		print_stats(state_ptr);
+		free_packet(state_ptr); 
 		state_ptr = NULL; 
 		exit(0); 
 	}

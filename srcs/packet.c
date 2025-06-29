@@ -1,12 +1,10 @@
 #include "../includes/ft_ping.h"
 
 void create_icmp_packet(t_ping_state *state, uint16_t sequence) {
-	struct icmphdr *icmp = &state->packet.header;
+	struct icmphdr *icmp = &state->packet->header;
 	
 	state->conn.pid = getpid();
-
 	icmp->type = (state->conn.family == AF_INET) ? ICMP_ECHO : ICMP6_ECHO_REQUEST;
-
 	icmp->code = 0;                   //  0 for ping
 	icmp->un.echo.id = htons(getpid()); // PID in network byte order
 	icmp->un.echo.sequence = htons(sequence); // sequence number in network byte order
@@ -15,8 +13,24 @@ void create_icmp_packet(t_ping_state *state, uint16_t sequence) {
 	icmp->checksum = calculate_checksum(state);
 }
 
+int allocate_packet(t_ping_state *state) {
+    state->packet = malloc(state->opts.psize);
+    if (!state->packet) {
+        perror("malloc");
+        return 1;
+    }
+    return 0;
+}
+
+void free_packet(t_ping_state *state) {
+    if (state->packet) {
+        free(state->packet);
+        state->packet = NULL;
+    }
+}
+
 uint16_t calculate_checksum(t_ping_state *state) {
-	uint16_t *ptr = (uint16_t*)&state->packet;
+	uint16_t *ptr = (uint16_t*)state->packet;
 	int bytes = state->opts.psize;
 	uint32_t sum = 0;
 	
@@ -44,12 +58,13 @@ void fill_packet_data(t_ping_state *state) {
 	gettimeofday(&tv, NULL);
 	
 	// timestamp at beginning of data
-	memcpy(state->packet.msg, &tv, sizeof(tv));
+	memcpy(&state->packet->msg, &tv, sizeof(tv));
 	
 	// fill with a pattern
 	for (size_t i = sizeof(tv); i < state->opts.psize - sizeof(struct icmphdr); i++) {
-		state->packet.msg[i] = 0x10 + (i % 48); // 0x10, 0x11, 0x12...
+		state->packet->msg[i] = 0x10 + (i % 48); // 0x10, 0x11, 0x12...
 	}
+
 }
 
 int parse_icmp_reply(char *buffer, ssize_t bytes_received, uint16_t expected_sequence, t_ping_state *state) {
@@ -77,7 +92,7 @@ int parse_icmp_reply(char *buffer, ssize_t bytes_received, uint16_t expected_seq
 	if (state->conn.family == AF_INET) {
 		sent_time = (struct timeval*)(buffer + (ip_header->ihl * 4) + sizeof(struct icmphdr));
 	} else {
-		sent_time = (struct timeval*)(buffer + sizeof(struct icmphdr)); // IPv6: no IP header
+		sent_time = (struct timeval*)(buffer + sizeof(struct icmphdr)); // ipv6: no IP header
 	}
     
     double rtt = (now.tv_sec - sent_time->tv_sec) * 1000.0 + 
@@ -96,7 +111,7 @@ int parse_icmp_reply(char *buffer, ssize_t bytes_received, uint16_t expected_seq
 					   bytes_received - (ip_header->ihl * 4) : 
 					   bytes_received;
 	
-	int ttl = (state->conn.family == AF_INET) ? ip_header->ttl : 64;
+	int ttl = (state->conn.family == AF_INET) ? ip_header->ttl : 64; // default for IPv6
 	
 	if (state->opts.verbose) {
 		fprintf(stdout, "%zu bytes from %s: icmp_seq=%d ident=%d ttl=%d time=%.3f ms\n",
