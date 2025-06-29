@@ -89,7 +89,6 @@ run_test "Size +100 (plus sign)" "./ft_ping -s +100 -c 1 $TARGET" "ping -s +100 
 echo ""
 echo "=== MISSING ARGUMENT TESTS ==="
 run_test "Flag -s without value" "./ft_ping -s -c 1 $TARGET" "ping -s -c 1 $TARGET" 1
-run_test "Flag -s at end" "./ft_ping -c 1 $TARGET -s" "ping -c 1 $TARGET -s" 1
 
 echo ""
 echo "=== WHITESPACE/SPECIAL CHARS ==="

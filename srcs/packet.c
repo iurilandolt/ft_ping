@@ -14,6 +14,12 @@ void create_icmp_packet(t_ping_state *state, uint16_t sequence) {
 }
 
 int allocate_packet(t_ping_state *state) {
+    size_t header_size = (state->conn.family == AF_INET) ? 
+                        sizeof(struct icmphdr) : 
+                        sizeof(struct icmp6_hdr);    
+    
+    state->opts.psize += header_size;
+    
     state->packet = malloc(state->opts.psize);
     if (!state->packet) {
         perror("malloc");
@@ -59,11 +65,15 @@ void fill_packet_data(t_ping_state *state) {
 	
 	// timestamp at beginning of data
 	memcpy(&state->packet->msg, &tv, sizeof(tv));
-	
-	// fill with a pattern
-	for (size_t i = sizeof(tv); i < state->opts.psize - sizeof(struct icmphdr); i++) {
-		state->packet->msg[i] = 0x10 + (i % 48); // 0x10, 0x11, 0x12...
-	}
+    size_t header_size = (state->conn.family == AF_INET) ? 
+                        sizeof(struct icmphdr) : 
+                        sizeof(struct icmp6_hdr);
+    size_t data_size = state->opts.psize - header_size;
+    
+    // fill with a pattern
+    for (size_t i = sizeof(tv); i < data_size; i++) {
+        state->packet->msg[i] = 0x10 + (i % 48);
+    }
 
 }
 

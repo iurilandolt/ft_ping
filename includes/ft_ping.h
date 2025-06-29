@@ -21,7 +21,7 @@
 #include <arpa/inet.h>
 
 
-#define PING_PKT_S 64			// ping packet size
+#define PING_PKT_S 56			// ping packet size
 
 typedef struct s_ping_pkg {
     struct icmphdr header;
@@ -79,6 +79,7 @@ int parse_icmp_reply(char *buffer, ssize_t bytes_received, uint16_t expected_seq
 // io
 int parseArgs(t_ping_state *state, int argc, char **argv);
 void print_verbose_info(t_ping_state *state);
+void print_default_info(t_ping_state *state);
 void print_stats(t_ping_state *state);
 
 #endif

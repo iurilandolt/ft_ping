@@ -17,13 +17,8 @@ int main(int argc, char **argv) {
 	gettimeofday(&state.stats.start_time, NULL);
 	
 	print_verbose_info(&state);
+	print_default_info(&state);
 	
-    printf("PING %s (%s) %zu(%zu) bytes of data.\n", 
-           state.conn.target, state.conn.addr_str, 
-           state.opts.psize - sizeof(struct icmphdr), //  
-           state.opts.psize + 20); // 84 total bytes (ICMP + IP)
-
-	// Main ping loop
 	uint16_t sequence = 1;
 	while (state.opts.count == -1 || sequence <= state.opts.count) {
 		// Create and send ping packet

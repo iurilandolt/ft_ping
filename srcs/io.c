@@ -43,7 +43,7 @@ int parseArgs(t_ping_state *state, int argc, char **argv) {
 				if (parse_int_range(optarg, "packet size", 0, 65507, &size) != 0) {
 					return 1;
 				}
-				state->opts.psize = size + sizeof(struct icmphdr);
+				state->opts.psize = size; // + sizeof(struct icmphdr)
 				break;
 			}
 
@@ -106,7 +106,6 @@ void print_verbose_info(t_ping_state *state) {
         return;
     }
     
-    // Get socket type from our actual socket
     int socktype;
     socklen_t optlen = sizeof(socktype);
     getsockopt(state->conn.sockfd, SOL_SOCKET, SO_TYPE, &socktype, &optlen);
@@ -114,7 +113,6 @@ void print_verbose_info(t_ping_state *state) {
     const char *socktype_str = (socktype == SOCK_RAW) ? "SOCK_RAW" : 
                               (socktype == SOCK_DGRAM) ? "SOCK_DGRAM" : "UNKNOWN";
     
-    // Use the family we already have in the struct
     if (state->conn.family == AF_INET) {
         printf("ping: sock4.fd: %d (socktype: %s), sock6.fd: -1 (socktype: SOCK_RAW), hints.ai_family: AF_UNSPEC\n",
                state->conn.sockfd, socktype_str);
@@ -124,7 +122,24 @@ void print_verbose_info(t_ping_state *state) {
     }
     
     const char *family_str = (state->conn.family == AF_INET) ? "AF_INET" : "AF_INET6";
-    
     printf("\nai->ai_family: %s, ai->ai_canonname: '%s'\n",
            family_str, state->conn.target);
+}
+
+void print_default_info(t_ping_state *state) {
+	size_t icmp_header_size = (state->conn.family == AF_INET) ? 
+							sizeof(struct icmphdr) : 
+							sizeof(struct icmp6_hdr);
+	size_t data_size = state->opts.psize - icmp_header_size;
+	if (state->conn.family == AF_INET) {
+		size_t total_with_ip = data_size + icmp_header_size + 20; // +20 for IPv4 header
+		printf("PING %s (%s) %zu(%zu) bytes of data.\n", 
+			state->conn.target, state->conn.addr_str, 
+			data_size,        // 56
+			total_with_ip);   // 84
+	} else {
+		printf("PING %s (%s) %zu data bytes\n", 
+			state->conn.target, state->conn.addr_str, 
+			data_size);       // 56
+	}
 }
