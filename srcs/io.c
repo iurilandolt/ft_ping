@@ -15,6 +15,7 @@ static int parse_int_range(const char *str, const char *name, long min, long max
     return 0;
 }
 
+
 int parseArgs(t_ping_state *state, int argc, char **argv) {
     int opt;
     
@@ -22,7 +23,7 @@ int parseArgs(t_ping_state *state, int argc, char **argv) {
     state->opts.count = -1;    
     state->opts.psize = PING_PKT_S;
     state->opts.preload = 0;
-    state->opts.timeout = 1;
+    state->opts.timeout = 4;
     
     while ((opt = getopt(argc, argv, "vc:s:l:W:")) != -1) {
         switch (opt) {
@@ -58,7 +59,7 @@ int parseArgs(t_ping_state *state, int argc, char **argv) {
 
 			case 'W': {
 				long timeout; // what is the def state->opts.timeout ?
-				if (parse_int_range(optarg, "timeout", 1, INT_MAX, &timeout) != 0) {
+				if (parse_int_range(optarg, "timeout", 1, 2099999, &timeout) != 0) {
 					return 1;
 				}
 				state->opts.timeout = timeout;
@@ -71,12 +72,10 @@ int parseArgs(t_ping_state *state, int argc, char **argv) {
                 return 1;
         }
     }
-    
     if (optind >= argc) {
         fprintf(stderr, "%s: usage error: Destination address required\n", argv[0]);
         return 1;
     }
-    
     state->conn.target = argv[optind];
     return 0;
 }
@@ -87,7 +86,11 @@ void print_stats(t_ping_state *state) {
     
     double total_time = (end_time.tv_sec - state->stats.start_time.tv_sec) * 1000.0 + 
                        (end_time.tv_usec - state->stats.start_time.tv_usec) / 1000.0;
-        
+					   
+	// if (state->stats.packets_sent > 0) {
+	// 	total_time -= (state->stats.packets_sent - 1) * 1000.0;  // Remove 1s sleeps
+    // }
+
     printf("\n--- %s ping statistics ---\n", state->conn.target);
     printf("%ld packets transmitted, %ld received, %.0f%% packet loss, time %.0fms\n",
            state->stats.packets_sent, state->stats.packets_received,
@@ -96,10 +99,13 @@ void print_stats(t_ping_state *state) {
     
     if (state->stats.packets_received > 0) {
         state->stats.avg_rtt = state->stats.sum_rtt / state->stats.packets_received;
-        printf("rtt min/avg/max = %.3f/%.3f/%.3f ms\n", 
-               state->stats.min_rtt, state->stats.avg_rtt, state->stats.max_rtt);
+		if (state->stats.avg_rtt > 0) {
+			printf("rtt min/avg/max = %.3f/%.3f/%.3f ms\n", 
+				state->stats.min_rtt, state->stats.avg_rtt, state->stats.max_rtt); 
+		}
     }
 }
+
 
 void print_verbose_info(t_ping_state *state) {
     if (!state->opts.verbose) {
@@ -126,6 +132,7 @@ void print_verbose_info(t_ping_state *state) {
            family_str, state->conn.target);
 }
 
+
 void print_default_info(t_ping_state *state) {
 	size_t icmp_header_size = (state->conn.family == AF_INET) ? 
 							sizeof(struct icmphdr) : 
@@ -142,4 +149,29 @@ void print_default_info(t_ping_state *state) {
 			state->conn.target, state->conn.addr_str, 
 			data_size);       // 56
 	}
+}
+
+
+void print_ping_reply(t_ping_state *state, size_t icmp_size, 
+                            struct icmphdr *icmp_header, int ttl, double rtt) {
+    uint16_t sequence = ntohs(icmp_header->un.echo.sequence);
+    uint16_t id = ntohs(icmp_header->un.echo.id);
+    
+    if (rtt >= 0.0) {
+        if (state->opts.verbose) {
+            fprintf(stdout, "%zu bytes from %s: icmp_seq=%d ident=%d ttl=%d time=%.3f ms\n",
+                    icmp_size, state->conn.addr_str, sequence, id, ttl, rtt);
+        } else {
+            fprintf(stdout, "%zu bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n",
+                    icmp_size, state->conn.addr_str, sequence, ttl, rtt);
+        }
+    } else {
+        if (state->opts.verbose) {
+            fprintf(stdout, "%zu bytes from %s: icmp_seq=%d ident=%d ttl=%d\n",
+                    icmp_size, state->conn.addr_str, sequence, id, ttl);
+        } else {
+            fprintf(stdout, "%zu bytes from %s: icmp_seq=%d ttl=%d\n",
+                    icmp_size, state->conn.addr_str, sequence, ttl);
+        }
+    }
 }

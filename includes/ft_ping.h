@@ -10,8 +10,10 @@
 #include <signal.h>
 #include <errno.h>
 #include <limits.h>
-#include <sys/time.h>
+#include <poll.h>
+#include <fcntl.h>
 
+#include <sys/time.h>
 #include <sys/socket.h>
 #include <netinet/ip_icmp.h>
 #include <netinet/icmp6.h>
@@ -81,6 +83,7 @@ int parseArgs(t_ping_state *state, int argc, char **argv);
 void print_verbose_info(t_ping_state *state);
 void print_default_info(t_ping_state *state);
 void print_stats(t_ping_state *state);
+void print_ping_reply(t_ping_state *state, size_t icmp_size, struct icmphdr *icmp_header, int ttl, double rtt);
 
 #endif
 

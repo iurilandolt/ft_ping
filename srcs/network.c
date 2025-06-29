@@ -66,14 +66,14 @@ int send_ping(t_ping_state *state) {
 							   state->conn.addr_len);
 	if (bytes_sent < 0) {
 		fprintf(stderr, "sendto: %s\n", strerror(errno));
-		return 0;
+		return 1;
 	}
 	if ((size_t)bytes_sent != state->opts.psize) {
 		fprintf(stderr, "sendto: partial packet sent (%zd of %zu bytes)\n", 
 				bytes_sent, state->opts.psize);
-		return 0;
+		return 1;
 	}
-	return 1;
+	return 0;
 }
 
 int receive_ping(t_ping_state *state, uint16_t expected_sequence) {
@@ -86,16 +86,16 @@ int receive_ping(t_ping_state *state, uint16_t expected_sequence) {
         
         if (bytes_received < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                fprintf(stderr, "Timeout waiting for reply\n");
-                return 0;
+                // fprintf(stderr, "Timeout waiting for reply\n");
+                return 1;
             } else {
                 fprintf(stderr, "recvfrom: %s\n", strerror(errno));
-                return 0;
+                return 1;
             }
         }
         
         if (parse_icmp_reply(buffer, bytes_received, expected_sequence, state) == 0) {
-            return 1;
+            return 0;
         }
     }
 }

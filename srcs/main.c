@@ -2,13 +2,14 @@
 
 int main(int argc, char **argv) {
 	t_ping_state state;
+	int ret = 0;
 	
 	if (
 		parseArgs(&state, argc, argv) ||
 		resolveHost(&state, argv) || 
 		createSocket(&state, argv) ||
 		allocate_packet(&state)) {
-		return 1;
+		return ret = 1;
 	}
 
 	setupSignals(&state);
@@ -21,22 +22,17 @@ int main(int argc, char **argv) {
 	
 	uint16_t sequence = 1;
 	while (state.opts.count == -1 || sequence <= state.opts.count) {
-		// Create and send ping packet
 		create_icmp_packet(&state, sequence);
-		
-		if (send_ping(&state)) {
+		if ((ret = send_ping(&state)) == 0) {
 			state.stats.packets_sent++;
-			
-			// Wait for reply or timeout
-			if (receive_ping(&state, sequence)) {
+			if ((ret = receive_ping(&state, sequence)) == 0) {
 				state.stats.packets_received++;
 			}
 		}
-		
 		sequence++;
-		
 		// Sleep 1 second between pings (unless preload)
-		if (state.opts.preload == 0 || sequence > state.opts.preload) {
+		if ((state.opts.count == -1 || sequence <= state.opts.count) && 
+			(state.opts.preload == 0 || sequence > state.opts.preload)) {
 			sleep(1);
 		}
 	}
@@ -45,5 +41,5 @@ int main(int argc, char **argv) {
 	free_packet(&state);
 	
 	close(state.conn.sockfd);
-	return 0;
+	return ret;
 }

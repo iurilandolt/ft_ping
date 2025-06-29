@@ -4,10 +4,10 @@ void create_icmp_packet(t_ping_state *state, uint16_t sequence) {
 	struct icmphdr *icmp = &state->packet->header;
 	
 	state->conn.pid = getpid();
+	icmp->code = 0;                
 	icmp->type = (state->conn.family == AF_INET) ? ICMP_ECHO : ICMP6_ECHO_REQUEST;
-	icmp->code = 0;                   //  0 for ping
-	icmp->un.echo.id = htons(getpid()); // PID in network byte order
-	icmp->un.echo.sequence = htons(sequence); // sequence number in network byte order
+	icmp->un.echo.id = htons(state->conn.pid); 
+	icmp->un.echo.sequence = htons(sequence);
 	icmp->checksum = 0;               
 	fill_packet_data(state);
 	icmp->checksum = calculate_checksum(state);
@@ -60,78 +60,88 @@ uint16_t calculate_checksum(t_ping_state *state) {
 }
 
 void fill_packet_data(t_ping_state *state) {
-	struct timeval tv;
-	gettimeofday(&tv, NULL);
-	
-	// timestamp at beginning of data
-	memcpy(&state->packet->msg, &tv, sizeof(tv));
-    size_t header_size = (state->conn.family == AF_INET) ? 
-                        sizeof(struct icmphdr) : 
-                        sizeof(struct icmp6_hdr);
-    size_t data_size = state->opts.psize - header_size;
+    size_t icmp_header_size = (state->conn.family == AF_INET) ? 
+                             sizeof(struct icmphdr) : 
+                             sizeof(struct icmp6_hdr);
+    size_t data_size = state->opts.psize - icmp_header_size;
     
-    // fill with a pattern
-    for (size_t i = sizeof(tv); i < data_size; i++) {
-        state->packet->msg[i] = 0x10 + (i % 48);
-    }
+    if (data_size >= sizeof(struct timeval)) {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        memcpy(&state->packet->msg, &tv, sizeof(tv));
+        
 
+        for (size_t i = sizeof(tv); i < data_size; i++) {
+            state->packet->msg[i] = 0x10 + (i % 48);
+        }
+    } else {
+        for (size_t i = 0; i < data_size; i++) {
+            state->packet->msg[i] = 0x10 + (i % 48);
+        }
+    }
+}
+
+static double calculate_rtt(char *buffer, struct iphdr *ip_header, size_t icmp_data_size, 
+						int family) {
+	if (icmp_data_size < sizeof(struct timeval)) {
+		return -1.0; 
+	}
+	
+	struct timeval now, *sent_time;
+	gettimeofday(&now, NULL);
+	
+	if (family == AF_INET) {
+		sent_time = (struct timeval*)(buffer + (ip_header->ihl * 4) + sizeof(struct icmphdr));
+	} else {
+		sent_time = (struct timeval*)(buffer + sizeof(struct icmphdr));
+	}
+	
+	return (now.tv_sec - sent_time->tv_sec) * 1000.0 + 
+		(now.tv_usec - sent_time->tv_usec) / 1000.0;
+}
+
+static void update_rtt_stats(t_ping_state *state, double rtt) {
+	if (state->stats.packets_received == 0 || rtt < state->stats.min_rtt) {
+		state->stats.min_rtt = rtt;
+	}
+	if (rtt > state->stats.max_rtt) {
+		state->stats.max_rtt = rtt;
+	}
+	state->stats.sum_rtt += rtt;
 }
 
 int parse_icmp_reply(char *buffer, ssize_t bytes_received, uint16_t expected_sequence, t_ping_state *state) {
-    // size validation
-    if ((unsigned long)bytes_received < sizeof(struct iphdr) + sizeof(struct icmphdr)) {
+    size_t min_size = (state->conn.family == AF_INET) ? 
+                      sizeof(struct iphdr) + sizeof(struct icmphdr) :
+                      sizeof(struct icmphdr);
+    if ((unsigned long)bytes_received < min_size) {
         return -1;
     }
-    
-    // parse packet 
+	
 	struct iphdr *ip_header = (state->conn.family == AF_INET) ? 
-					(struct iphdr*)buffer : NULL;
+							(struct iphdr*)buffer : NULL;
 	struct icmphdr *icmp_header = (state->conn.family == AF_INET) ? 
-					(struct icmphdr*)(buffer + (ip_header->ihl * 4)) : (struct icmphdr*)buffer;
-    // its our ping reply ?
+								(struct icmphdr*)(buffer + (ip_header->ihl * 4)) : 
+								(struct icmphdr*)buffer;
+	
 	int expected_type = (state->conn.family == AF_INET) ? ICMP_ECHOREPLY : ICMP6_ECHO_REPLY;
 	if (icmp_header->type != expected_type ||
 		ntohs(icmp_header->un.echo.id) != state->conn.pid ||
 		ntohs(icmp_header->un.echo.sequence) != expected_sequence) {
 		return -1;
 	}
-    
-    // calc RTT 
-    struct timeval now, *sent_time;
-    gettimeofday(&now, NULL);
-	if (state->conn.family == AF_INET) {
-		sent_time = (struct timeval*)(buffer + (ip_header->ihl * 4) + sizeof(struct icmphdr));
-	} else {
-		sent_time = (struct timeval*)(buffer + sizeof(struct icmphdr)); // ipv6: no IP header
-	}
-    
-    double rtt = (now.tv_sec - sent_time->tv_sec) * 1000.0 + 
-                 (now.tv_usec - sent_time->tv_usec) / 1000.0;
-    
-    // update stats 
-    if (state->stats.packets_received == 0 || rtt < state->stats.min_rtt) {
-        state->stats.min_rtt = rtt;
-    }
-    if (rtt > state->stats.max_rtt) {
-        state->stats.max_rtt = rtt;
-    }
-    state->stats.sum_rtt += rtt;
-    
+	
+	// should verify the checksum here, but skipping for brevity?
+
 	size_t icmp_size = (state->conn.family == AF_INET) ? 
-					   bytes_received - (ip_header->ihl * 4) : 
-					   bytes_received;
+					bytes_received - (ip_header->ihl * 4) : 
+					bytes_received;
+	size_t icmp_data_size = icmp_size - sizeof(struct icmphdr);
+	int ttl = (state->conn.family == AF_INET) ? ip_header->ttl : 64;
+	double rtt = calculate_rtt(buffer, ip_header, icmp_data_size, state->conn.family);
 	
-	int ttl = (state->conn.family == AF_INET) ? ip_header->ttl : 64; // default for IPv6
+	update_rtt_stats(state, rtt);
+	print_ping_reply(state, icmp_size, icmp_header, ttl, rtt);
 	
-	if (state->opts.verbose) {
-		fprintf(stdout, "%zu bytes from %s: icmp_seq=%d ident=%d ttl=%d time=%.3f ms\n",
-			icmp_size, state->conn.addr_str, ntohs(icmp_header->un.echo.sequence),
-			ntohs(icmp_header->un.echo.id), ttl, rtt);
-	} else {
-		fprintf(stdout, "%zu bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n",
-			icmp_size, state->conn.addr_str, ntohs(icmp_header->un.echo.sequence), 
-			ttl, rtt);
-	}
-	
-    return 0;
+	return 0;
 }
