@@ -1,140 +1,117 @@
 #include "../includes/ft_ping.h"
 
-
-void *get_addr_ptr(t_ping_state *state) {
-	return (state->conn.family == AF_INET) ? 
-		(void*)&((struct sockaddr_in*)state->conn.addr)->sin_addr :
-		(void*)&((struct sockaddr_in6*)state->conn.addr)->sin6_addr;
-}
-
-
 int resolveHost(t_ping_state *state, char **argv) {
 	struct addrinfo hints, *result;
 	
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_RAW;
-	// hints.ai_protocol = IPPROTO_ICMP;
+	
 	if (getaddrinfo(state->conn.target, NULL, &hints, &result) != 0) {
 		fprintf(stderr, "%s: %s: Name or service not known\n", 
 				argv[0], state->conn.target);
 		return 1;
 	}
+	
+	state->conn.ipv4.family = AF_INET;
+	state->conn.ipv4.protocol = IPPROTO_ICMP;
+	state->conn.ipv4.addr_len = sizeof(struct sockaddr_in);
+	
+	state->conn.ipv6.family = AF_INET6;
+	state->conn.ipv6.protocol = IPPROTO_ICMPV6;
+	state->conn.ipv6.addr_len = sizeof(struct sockaddr_in6);
+	
 	if (result->ai_family == AF_INET) {
-		memcpy(&state->conn.ipv4, result->ai_addr, sizeof(struct sockaddr_in));
-		state->conn.addr = &state->conn.ipv4;
-		state->conn.family = AF_INET;
-		// state->conn.protocol = IPPROTO_ICMP;
-		state->conn.addr_len = sizeof(struct sockaddr_in);
+		memcpy(&state->conn.ipv4.addr, result->ai_addr, sizeof(struct sockaddr_in));
+		inet_ntop(AF_INET, &((struct sockaddr_in*)&state->conn.ipv4.addr)->sin_addr, 
+				state->conn.ipv4.addr_str, INET_ADDRSTRLEN);
 	} else if (result->ai_family == AF_INET6) {
-		memcpy(&state->conn.ipv6, result->ai_addr, sizeof(struct sockaddr_in6));
-		state->conn.addr = &state->conn.ipv6;
-		state->conn.family = AF_INET6;
-		// state->conn.protocol = IPPROTO_ICMPV6;
-		state->conn.addr_len = sizeof(struct sockaddr_in6);
+		memcpy(&state->conn.ipv6.addr, result->ai_addr, sizeof(struct sockaddr_in6));
+		inet_ntop(AF_INET6, &((struct sockaddr_in6*)&state->conn.ipv6.addr)->sin6_addr, 
+				state->conn.ipv6.addr_str, INET6_ADDRSTRLEN);
 	}
-	inet_ntop(state->conn.family, get_addr_ptr(state), state->conn.addr_str, INET6_ADDRSTRLEN);
+	state->conn.target_family = result->ai_family;
 	freeaddrinfo(result);
 	return 0;
 }
 
 
 int createSocket(t_ping_state *state, char **argv) {
-	state->conn.protocol = (state->conn.family == AF_INET) ? IPPROTO_ICMP : IPPROTO_ICMPV6;
-	state->conn.sockfd = socket(state->conn.family, SOCK_RAW, state->conn.protocol);
+	int flags;
+	state->conn.ipv4.sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+	state->conn.ipv6.sockfd = socket(AF_INET6, SOCK_RAW, IPPROTO_ICMPV6);
 	
-	if (state->conn.sockfd < 0) {
-		fprintf(stderr, "%s: %s: Cannot create socket\n", argv[0], state->conn.target);
-		return 1;
-	}
-	// struct timeval timeout = {state->opts.timeout, 0}; // why 0 seconds?
-	// if (setsockopt(state->conn.sockfd, SOL_SOCKET, SO_RCVTIMEO, 
-	// 			&timeout, sizeof(timeout)) < 0) {
-	// 	fprintf(stderr, "setsockopt: %s\n", strerror(errno));
-	// 	return 1;
-	// }
-
-	int flags = fcntl(state->conn.sockfd, F_GETFL, 0);
-	if (flags < 0 || fcntl(state->conn.sockfd, F_SETFL, flags | O_NONBLOCK) < 0) {
-		fprintf(stderr, "fcntl: %s\n", strerror(errno));
-		return 1;
-	}	
-
-	return 0;
-}
-
-
-int send_ping(t_ping_state *state, uint16_t sequence) {
-	t_packet_entry *entry = find_sent_packet(state, sequence);
-	if (!entry) {
-		fprintf(stderr, "Packet %d not found\n", sequence);
+	if (state->conn.ipv4.sockfd < 0 || state->conn.ipv6.sockfd < 0) {
+		fprintf(stderr, "%s: Cannot create socket\n", argv[0]);
 		return 1;
 	}
 	
-	ssize_t bytes_sent = sendto(state->conn.sockfd, 
-							   entry->packet, 
-							   state->opts.psize, 
-							   0,
-							   (struct sockaddr*)state->conn.addr, 
-							   state->conn.addr_len);
-	if (bytes_sent < 0) {
-		fprintf(stderr, "sendto: %s\n", strerror(errno));
-		return 1;
-	}
-	if ((size_t)bytes_sent != state->opts.psize) {
-		fprintf(stderr, "sendto: partial packet sent (%zd of %zu bytes)\n", 
-				bytes_sent, state->opts.psize);
-		return 1;
-	}
+	flags = fcntl(state->conn.ipv4.sockfd, F_GETFL, 0);
+	fcntl(state->conn.ipv4.sockfd, F_SETFL, flags | O_NONBLOCK);
+	flags = fcntl(state->conn.ipv6.sockfd, F_GETFL, 0);
+	fcntl(state->conn.ipv6.sockfd, F_SETFL, flags | O_NONBLOCK);
+	
 	return 0;
 }
 
-int receive_ping(t_ping_state *state, uint16_t expected_sequence) {
-	char buffer[1024];
-	struct sockaddr_storage from;
-	socklen_t fromlen = sizeof(from);
+int receive_packet(t_ping_state *state, int sockfd, uint16_t *received_sequence) {
+    char buffer[1024];
+    struct sockaddr_storage from;
+    socklen_t fromlen = sizeof(from);
 
-	while (1) {
-		ssize_t bytes_received = recvfrom(state->conn.sockfd, buffer, sizeof(buffer), 0, (struct sockaddr*)&from, &fromlen);
-		
-		if (bytes_received < 0) {
-			if (errno == EAGAIN || errno == EWOULDBLOCK) {
-				// fprintf(stderr, "Timeout waiting for reply\n");
-				return 1;
-			} else {
-				fprintf(stderr, "recvfrom: %s\n", strerror(errno));
-				return 1;
-			}
-		}
-		
-		if (parse_icmp_reply(buffer, bytes_received, expected_sequence, state) == 0) {
-			return 0;
-		}
-	}
+    ssize_t bytes_received = recvfrom(sockfd, buffer, sizeof(buffer), MSG_DONTWAIT, 
+                                     (struct sockaddr*)&from, &fromlen);
+    
+    if (bytes_received < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return 1; // No data available
+        } else {
+            perror("recvfrom");
+            return 1;
+        }
+    }
+    
+    // Parse packet and get the sequence number if it's one of ours
+    if (parse_icmp_reply(buffer, bytes_received, received_sequence, state) == 0) {
+        // Check if this sequence is in our sent_packets list
+        if (find_packet(state, *received_sequence)) {
+            gettimeofday(&state->stats.last_packet_time, NULL);
+            remove_packet(state, *received_sequence);
+            return 0; // Success - packet was ours and processed
+        }
+    }
+    
+    return 1; // Not our packet or not in our sent list
 }
 
-/*
-int receive_ping(t_ping_state *state, uint16_t expected_sequence) {
-	char buffer[1024];
-	struct sockaddr_storage from;
-	socklen_t fromlen = sizeof(from);
-
-	while (1) {
-		ssize_t bytes_received = recvfrom(state->conn.sockfd, buffer, sizeof(buffer), 0, (struct sockaddr*)&from, &fromlen);
-		
-		if (bytes_received < 0) {
-			if (errno == EAGAIN || errno == EWOULDBLOCK) {
-				// fprintf(stderr, "Timeout waiting for reply\n");
-				return 1;
-			} else {
-				fprintf(stderr, "recvfrom: %s\n", strerror(errno));
-				return 1;
-			}
-		}
-		
-		if (parse_icmp_reply(buffer, bytes_received, expected_sequence, state) == 0) {
-			return 0;
-		}
-	}
+int send_packet(t_ping_state *state, uint16_t sequence, int sockfd) {
+    t_packet_entry *entry = find_packet(state, sequence);
+    if (!entry) {
+        fprintf(stderr, "Packet %d not found\n", sequence);
+        return 1;
+    }
+    
+    struct sockaddr *addr;
+    socklen_t addr_len;
+    
+    // Determine address based on sockfd
+    if (sockfd == state->conn.ipv4.sockfd) {
+        addr = (struct sockaddr*)&state->conn.ipv4.addr;
+        addr_len = state->conn.ipv4.addr_len;
+    } else {
+        addr = (struct sockaddr*)&state->conn.ipv6.addr;
+        addr_len = state->conn.ipv6.addr_len;
+    }
+    
+    ssize_t bytes_sent = sendto(sockfd, entry->packet, state->opts.psize, 0, addr, addr_len);
+    if (bytes_sent < 0) {
+        perror("sendto");
+        return 1;
+    }
+    if ((size_t)bytes_sent != state->opts.psize) {
+        fprintf(stderr, "sendto: partial packet sent (%zd of %zu bytes)\n", 
+                bytes_sent, state->opts.psize);
+        return 1;
+    }
+    return 0;
 }
-*/

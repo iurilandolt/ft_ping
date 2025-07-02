@@ -39,16 +39,26 @@ typedef struct s_packet_entry {
 typedef struct s_ping_state {
 	t_packet_entry *sent_packets;  // Linked list of sent packets
 	struct {
-		int sockfd;
-		char *target;
-		void *addr;                    // pointer to address structure
-		int family;                    // AF_INET or AF_INET6
-		int protocol;
-		uint16_t pid;                  // IPPROTO_ICMP or IPPROTO_ICMPV6
-		socklen_t addr_len;            // sizeof(sockaddr_in) or sizeof(sockaddr_in6)
-		struct sockaddr_in ipv4;       // IPv4 address
-		struct sockaddr_in6 ipv6;
-		char addr_str[INET6_ADDRSTRLEN];
+        char *target;
+		int target_family;
+		struct {
+            int sockfd;
+            int family;                    
+            int protocol;
+            uint16_t pid;                 
+            socklen_t addr_len;         
+            struct sockaddr_in addr;
+            char addr_str[INET_ADDRSTRLEN];
+        } ipv4;
+        struct {
+            int sockfd;
+            int family;                    
+            int protocol;
+            uint16_t pid;                 
+            socklen_t addr_len;          
+            struct sockaddr_in6 addr;     
+            char addr_str[INET6_ADDRSTRLEN];
+        } ipv6;
 	} conn;
 	struct {
         long packets_sent;
@@ -58,6 +68,8 @@ typedef struct s_ping_state {
 		double avg_rtt;
         double sum_rtt;
         struct timeval start_time;
+        struct timeval first_packet_time;
+        struct timeval last_packet_time;
 	} stats;
 	struct {
         int verbose;     // -v flag
@@ -71,27 +83,27 @@ typedef struct s_ping_state {
 // signals
 void handleSignals(int signum, siginfo_t *info, void *ptr);
 void setupSignals(t_ping_state *state);
-// network
-void *get_addr_ptr(t_ping_state *state);
-int resolveHost(t_ping_state *state, char **argv);
-int createSocket(t_ping_state *state, char **argv);
-int send_ping(t_ping_state *state, uint16_t sequence);
-int receive_ping(t_ping_state *state, uint16_t sequence);
-// packet
-int allocate_packet(t_ping_state *state);
-void free_packet(t_ping_state *state);
-void create_icmp_packet(t_ping_state *state, uint16_t sequence);
-uint16_t calculate_checksum(t_ping_state *state, uint16_t sequence);
-void fill_packet_data(t_ping_state *state, uint16_t sequence);
-int parse_icmp_reply(char *buffer, ssize_t bytes_received, uint16_t expected_sequence, t_ping_state *state);
-t_packet_entry* find_sent_packet(t_ping_state *state, uint16_t sequence);
-void remove_sent_packet(t_ping_state *state, uint16_t sequence);
 // io
 int parseArgs(t_ping_state *state, int argc, char **argv);
+void print_stats(t_ping_state *state);
 void print_verbose_info(t_ping_state *state);
 void print_default_info(t_ping_state *state);
-void print_stats(t_ping_state *state);
 void print_ping_reply(t_ping_state *state, size_t icmp_size, struct icmphdr *icmp_header, int ttl, double rtt);
+// network
+int resolveHost(t_ping_state *state, char **argv);
+int createSocket(t_ping_state *state, char **argv);
+int receive_packet(t_ping_state *state, int sockfd, uint16_t *received_sequence);
+int send_packet(t_ping_state *state, uint16_t sequence, int sockfd);
+// packets
+int init_packet_system(t_ping_state *state);
+void create_packet(t_ping_state *state, uint16_t sequence);
+t_packet_entry* find_packet(t_ping_state *state, uint16_t sequence);
+void remove_packet(t_ping_state *state, uint16_t sequence);
+void cleanup_packets(t_ping_state *state);
+void fill_packet_data(t_ping_state *state, uint16_t sequence);
+uint16_t calculate_checksum(t_ping_state *state, uint16_t sequence);
+int parse_icmp_reply(char *buffer, ssize_t bytes_received, uint16_t *found_sequence, t_ping_state *state);
+
 
 #endif
 

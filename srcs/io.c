@@ -80,16 +80,25 @@ int parseArgs(t_ping_state *state, int argc, char **argv) {
     return 0;
 }
 
+// Add these functions to the existing io.c file
+
 void print_stats(t_ping_state *state) {
     struct timeval end_time;
-    gettimeofday(&end_time, NULL);
     
-    double total_time = (end_time.tv_sec - state->stats.start_time.tv_sec) * 1000.0 + 
-                       (end_time.tv_usec - state->stats.start_time.tv_usec) / 1000.0;
-					   
-	// if (state->stats.packets_sent > 0) {
-	// 	total_time -= (state->stats.packets_sent - 1) * 1000.0;  // Remove 1s sleeps
-    // }
+    // Use the time of the last received packet, or current time if no packets received
+    if (state->stats.packets_received > 0) {
+        end_time = state->stats.last_packet_time;
+    } else {
+        gettimeofday(&end_time, NULL);
+    }
+    
+    // Calculate time from first packet sent to last packet received
+    struct timeval start_time = (state->stats.packets_sent > 0) ? 
+                               state->stats.first_packet_time : 
+                               state->stats.start_time;
+    
+    double total_time = (end_time.tv_sec - start_time.tv_sec) * 1000.0 + 
+                       (end_time.tv_usec - start_time.tv_usec) / 1000.0;
 
     printf("\n--- %s ping statistics ---\n", state->conn.target);
     printf("%ld packets transmitted, %ld received, %.0f%% packet loss, time %.0fms\n",
@@ -99,13 +108,12 @@ void print_stats(t_ping_state *state) {
     
     if (state->stats.packets_received > 0) {
         state->stats.avg_rtt = state->stats.sum_rtt / state->stats.packets_received;
-		if (state->stats.avg_rtt > 0) {
-			printf("rtt min/avg/max = %.3f/%.3f/%.3f ms\n", 
-				state->stats.min_rtt, state->stats.avg_rtt, state->stats.max_rtt); 
-		}
+        if (state->stats.avg_rtt > 0) {
+            printf("rtt min/avg/max = %.3f/%.3f/%.3f ms\n", 
+                state->stats.min_rtt, state->stats.avg_rtt, state->stats.max_rtt); 
+        }
     }
 }
-
 
 void print_verbose_info(t_ping_state *state) {
     if (!state->opts.verbose) {
@@ -114,64 +122,71 @@ void print_verbose_info(t_ping_state *state) {
     
     int socktype;
     socklen_t optlen = sizeof(socktype);
-    getsockopt(state->conn.sockfd, SOL_SOCKET, SO_TYPE, &socktype, &optlen);
+    getsockopt(state->conn.ipv4.sockfd, SOL_SOCKET, SO_TYPE, &socktype, &optlen);
     
     const char *socktype_str = (socktype == SOCK_RAW) ? "SOCK_RAW" : 
                               (socktype == SOCK_DGRAM) ? "SOCK_DGRAM" : "UNKNOWN";
     
-    if (state->conn.family == AF_INET) {
-        printf("ping: sock4.fd: %d (socktype: %s), sock6.fd: -1 (socktype: SOCK_RAW), hints.ai_family: AF_UNSPEC\n",
-               state->conn.sockfd, socktype_str);
+    if (state->conn.target_family == AF_INET) {
+        printf("ping: sock4.fd: %d (socktype: %s), sock6.fd: %d (socktype: SOCK_RAW), hints.ai_family: AF_UNSPEC\n",
+               state->conn.ipv4.sockfd, socktype_str, state->conn.ipv6.sockfd);
     } else {
-        printf("ping: sock4.fd: -1 (socktype: SOCK_RAW), sock6.fd: %d (socktype: %s), hints.ai_family: AF_UNSPEC\n",
-               state->conn.sockfd, socktype_str);
+        printf("ping: sock4.fd: %d (socktype: SOCK_RAW), sock6.fd: %d (socktype: %s), hints.ai_family: AF_UNSPEC\n",
+               state->conn.ipv4.sockfd, state->conn.ipv6.sockfd, socktype_str);
     }
     
-    const char *family_str = (state->conn.family == AF_INET) ? "AF_INET" : "AF_INET6";
+    const char *family_str = (state->conn.target_family == AF_INET) ? "AF_INET" : "AF_INET6";
     printf("\nai->ai_family: %s, ai->ai_canonname: '%s'\n",
            family_str, state->conn.target);
 }
 
-
 void print_default_info(t_ping_state *state) {
-	size_t icmp_header_size = (state->conn.family == AF_INET) ? 
-							sizeof(struct icmphdr) : 
-							sizeof(struct icmp6_hdr);
-	size_t data_size = state->opts.psize - icmp_header_size;
-	if (state->conn.family == AF_INET) {
-		size_t total_with_ip = data_size + icmp_header_size + 20; // +20 for IPv4 header
-		printf("PING %s (%s) %zu(%zu) bytes of data.\n", 
-			state->conn.target, state->conn.addr_str, 
-			data_size,        // 56
-			total_with_ip);   // 84
-	} else {
-		printf("PING %s (%s) %zu data bytes\n", 
-			state->conn.target, state->conn.addr_str, 
-			data_size);       // 56
-	}
+    size_t icmp_header_size = (state->conn.target_family == AF_INET) ? 
+                            sizeof(struct icmphdr) : 
+                            sizeof(struct icmp6_hdr);
+    size_t data_size = state->opts.psize - icmp_header_size;
+    
+    char *addr_str = (state->conn.target_family == AF_INET) ?
+                     state->conn.ipv4.addr_str : 
+                     state->conn.ipv6.addr_str;
+    
+    if (state->conn.target_family == AF_INET) {
+        size_t total_with_ip = data_size + icmp_header_size + 20; // +20 for IPv4 header
+        printf("PING %s (%s) %zu(%zu) bytes of data.\n", 
+            state->conn.target, addr_str, 
+            data_size,        // 56
+            total_with_ip);   // 84
+    } else {
+        printf("PING %s (%s) %zu data bytes\n", 
+            state->conn.target, addr_str, 
+            data_size);       // 56
+    }
 }
 
-
 void print_ping_reply(t_ping_state *state, size_t icmp_size, 
-                            struct icmphdr *icmp_header, int ttl, double rtt) {
+                     struct icmphdr *icmp_header, int ttl, double rtt) {
     uint16_t sequence = ntohs(icmp_header->un.echo.sequence);
     uint16_t id = ntohs(icmp_header->un.echo.id);
+    
+    char *addr_str = (state->conn.target_family == AF_INET) ?
+                     state->conn.ipv4.addr_str : 
+                     state->conn.ipv6.addr_str;
     
     if (rtt >= 0.0) {
         if (state->opts.verbose) {
             fprintf(stdout, "%zu bytes from %s: icmp_seq=%d ident=%d ttl=%d time=%.3f ms\n",
-                    icmp_size, state->conn.addr_str, sequence, id, ttl, rtt);
+                    icmp_size, addr_str, sequence, id, ttl, rtt);
         } else {
             fprintf(stdout, "%zu bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n",
-                    icmp_size, state->conn.addr_str, sequence, ttl, rtt);
+                    icmp_size, addr_str, sequence, ttl, rtt);
         }
     } else {
         if (state->opts.verbose) {
             fprintf(stdout, "%zu bytes from %s: icmp_seq=%d ident=%d ttl=%d\n",
-                    icmp_size, state->conn.addr_str, sequence, id, ttl);
+                    icmp_size, addr_str, sequence, id, ttl);
         } else {
             fprintf(stdout, "%zu bytes from %s: icmp_seq=%d ttl=%d\n",
-                    icmp_size, state->conn.addr_str, sequence, ttl);
+                    icmp_size, addr_str, sequence, ttl);
         }
     }
 }

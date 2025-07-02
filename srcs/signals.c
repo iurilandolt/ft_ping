@@ -2,19 +2,6 @@
 
 static t_ping_state *state_ptr = NULL; 
 
-void handleSignals(int signum, siginfo_t *info, void *ptr) {
-	if (signum == SIGINT || signum == SIGTERM || signum == SIGQUIT) {
-		printf("\nReceived signal %d, exiting...\n", signum);
-		close(state_ptr->conn.sockfd);
-		print_stats(state_ptr);
-		free_packet(state_ptr); 
-		state_ptr = NULL; 
-		exit(0); 
-	}
-	(void)info;
-	(void)ptr;
-}
-
 void setupSignals(t_ping_state *state) { 
 	static struct sigaction handler;
 	state_ptr = state; 
@@ -31,4 +18,17 @@ void setupSignals(t_ping_state *state) {
 	sigaction(SIGPIPE, &ignore, NULL);
 	sigaction(SIGCHLD, &ignore, NULL);
 	sigaction(SIGTSTP, &ignore, NULL);
+}
+
+void handleSignals(int signum, siginfo_t *info, void *ptr) {
+	if (signum == SIGINT || signum == SIGTERM || signum == SIGQUIT) {
+		printf("\nReceived signal %d, exiting...\n", signum);
+		cleanup_packets(state_ptr);
+		close(state_ptr->conn.ipv4.sockfd);
+		close(state_ptr->conn.ipv6.sockfd);
+		state_ptr = NULL; 
+		exit(0); 
+	}
+	(void)info;
+	(void)ptr;
 }
