@@ -70,6 +70,8 @@ typedef struct s_ping_state {
         struct timeval start_time;
         struct timeval first_packet_time;
         struct timeval last_packet_time;
+        struct timeval last_send_time;
+        int preload_sent;
 	} stats;
 	struct {
         int verbose;     // -v flag
@@ -92,7 +94,7 @@ void print_ping_reply(t_ping_state *state, size_t icmp_size, struct icmphdr *icm
 // network
 int resolveHost(t_ping_state *state, char **argv);
 int createSocket(t_ping_state *state, char **argv);
-int receive_packet(t_ping_state *state, int sockfd, uint16_t *received_sequence);
+int receive_packet(t_ping_state *state, int sockfd);
 int send_packet(t_ping_state *state, uint16_t sequence, int sockfd);
 // packets
 int init_packet_system(t_ping_state *state);

@@ -1,5 +1,60 @@
 #include "../includes/ft_ping.h"
 
+static long timeval_diff_ms(struct timeval *start, struct timeval *end) {
+    if (start->tv_sec == 0) {
+        return 0; // No previous time set
+    }
+    return (end->tv_sec - start->tv_sec) * 1000 + 
+           (end->tv_usec - start->tv_usec) / 1000;
+}
+
+static int send_next_packet(t_ping_state *state, uint16_t *sequence, int target_sockfd, long time_since_last_send) {
+    // Check if we've reached the count limit (if any)
+    if (state->opts.count != -1 && *sequence > state->opts.count) {
+        return 1; // No more packets to send
+    }
+    
+    // Send preload packets first (no delay)
+    if (state->stats.preload_sent < state->opts.preload) {
+        // Send packet immediately
+    }
+    // Send normal packets with 1 second interval
+    else if (state->stats.last_send_time.tv_sec == 0 || time_since_last_send >= 1000) {
+        // Send packet after delay
+    }
+    else {
+        return 1; // Not time to send yet
+    }
+    
+    // Send the packet
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    
+    create_packet(state, *sequence);
+    if (send_packet(state, *sequence, target_sockfd) == 0) {
+        if (state->stats.packets_sent == 0) {
+            gettimeofday(&state->stats.first_packet_time, NULL);
+        }
+        state->stats.packets_sent++;
+        if (state->stats.preload_sent < state->opts.preload) {
+            state->stats.preload_sent++;
+        }
+        state->stats.last_send_time = now;
+        (*sequence)++;
+        return 0; // Success
+    }
+    return 1; // Send failed
+}
+
+static int calculate_poll_timeout(t_ping_state *state, int all_packets_sent, long time_since_last_send) {
+    if (!all_packets_sent && time_since_last_send < 1000) {
+        return 1000 - time_since_last_send;
+    } else if (state->sent_packets != NULL) {
+        return state->opts.timeout * 1000;
+    }
+    return -1; // Signal to break
+}
+
 int setupPoll(t_ping_state *state, struct pollfd *fds) {
 	int sockets[] = {state->conn.ipv4.sockfd, state->conn.ipv6.sockfd};
 	
@@ -25,7 +80,6 @@ int main(int argc, char **argv) {
         init_packet_system(&state)) {
         return ret = 1;
     }
-    
     setupSignals(&state);
     
     memset(&state.stats, 0, sizeof(state.stats));
@@ -36,8 +90,6 @@ int main(int argc, char **argv) {
     
     int target_sockfd = setupPoll(&state, fds);
     
-    int preload_sent = 0;
-    struct timeval last_send = {0, 0};
     int all_packets_sent = 0;
 
     while (!all_packets_sent || state.sent_packets != NULL) {
@@ -45,39 +97,11 @@ int main(int argc, char **argv) {
         gettimeofday(&now, NULL);
         
         // Calculate time since last send in milliseconds
-        long time_since_last_send = 0;
-        if (last_send.tv_sec != 0) {
-            time_since_last_send = (now.tv_sec - last_send.tv_sec) * 1000 + 
-                                   (now.tv_usec - last_send.tv_usec) / 1000;
-        }
+        long time_since_last_send = timeval_diff_ms(&state.stats.last_send_time, &now);
         
-        // Send preload packets first
-        if (preload_sent < state.opts.preload && sequence <= (state.opts.count == -1 ? INT_MAX : state.opts.count)) {
-            create_packet(&state, sequence);
-            if ((ret = send_packet(&state, sequence, target_sockfd)) == 0) {
-                if (state.stats.packets_sent == 0) {
-                    // Record when we send the first packet
-                    gettimeofday(&state.stats.first_packet_time, NULL);
-                }
-                state.stats.packets_sent++;
-                preload_sent++;
-                last_send = now;
-                sequence++;
-            }
-        }
-        // Send normal packets with 1 second interval (1000ms)
-        else if (sequence <= (state.opts.count == -1 ? INT_MAX : state.opts.count) && 
-                (last_send.tv_sec == 0 || time_since_last_send >= 1000)) {
-            create_packet(&state, sequence);
-            if ((ret = send_packet(&state, sequence, target_sockfd)) == 0) {
-                if (state.stats.packets_sent == 0) {
-                    // Record when we send the first packet
-                    gettimeofday(&state.stats.first_packet_time, NULL);
-                }
-                state.stats.packets_sent++;
-                last_send = now;
-                sequence++;
-            }
+        // Try to send next packet
+        if (send_next_packet(&state, &sequence, target_sockfd, time_since_last_send) != 0) {
+            // No packet was sent (either not time yet or send failed)
         }
         
         // Mark that we've sent all packets
@@ -86,15 +110,8 @@ int main(int argc, char **argv) {
         }
         
         // Calculate appropriate poll timeout
-        int poll_timeout;
-        if (!all_packets_sent && time_since_last_send < 1000) {
-            // Wait until next send time
-            poll_timeout = 1000 - time_since_last_send;
-        } else if (state.sent_packets != NULL) {
-            // Wait for remaining responses, but not too long
-            poll_timeout = state.opts.timeout * 1000;
-        } else {
-            // No packets in flight and all sent
+		int poll_timeout;
+        if ((poll_timeout = calculate_poll_timeout(&state, all_packets_sent, time_since_last_send)) < 0) {
             break;
         }
         
@@ -103,9 +120,7 @@ int main(int argc, char **argv) {
         if (poll_result > 0) {
             for (int i = 0; i < 2; i++) {
                 if (fds[i].revents & POLLIN) {
-                    uint16_t received_sequence;
-                    // Call receive_packet only ONCE per socket
-                    if ((ret = receive_packet(&state, fds[i].fd, &received_sequence)) == 0) {
+                    if ((ret = receive_packet(&state, fds[i].fd)) == 0) {
                         state.stats.packets_received++;
                     }
                     break;

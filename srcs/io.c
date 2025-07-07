@@ -50,7 +50,7 @@ int parseArgs(t_ping_state *state, int argc, char **argv) {
 
 			case 'l': {
 				long preload;
-				if (parse_int_range(optarg, "preload", 1, INT_MAX, &preload) != 0) {
+				if (parse_int_range(optarg, "preload", 1, 3, &preload) != 0) {
 					return 1;
 				}
 				state->opts.preload = preload;

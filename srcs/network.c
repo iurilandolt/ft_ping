@@ -54,34 +54,33 @@ int createSocket(t_ping_state *state, char **argv) {
 	return 0;
 }
 
-int receive_packet(t_ping_state *state, int sockfd, uint16_t *received_sequence) {
+
+int receive_packet(t_ping_state *state, int sockfd) {
     char buffer[1024];
     struct sockaddr_storage from;
     socklen_t fromlen = sizeof(from);
+    uint16_t received_sequence;
 
     ssize_t bytes_received = recvfrom(sockfd, buffer, sizeof(buffer), MSG_DONTWAIT, 
                                      (struct sockaddr*)&from, &fromlen);
     
     if (bytes_received < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            return 1; // No data available
+            return 1;
         } else {
             perror("recvfrom");
             return 1;
         }
     }
     
-    // Parse packet and get the sequence number if it's one of ours
-    if (parse_icmp_reply(buffer, bytes_received, received_sequence, state) == 0) {
-        // Check if this sequence is in our sent_packets list
-        if (find_packet(state, *received_sequence)) {
+    if (parse_icmp_reply(buffer, bytes_received, &received_sequence, state) == 0) {
+        if (find_packet(state, received_sequence)) {
             gettimeofday(&state->stats.last_packet_time, NULL);
-            remove_packet(state, *received_sequence);
-            return 0; // Success - packet was ours and processed
+            remove_packet(state, received_sequence);
+            return 0; 
         }
     }
-    
-    return 1; // Not our packet or not in our sent list
+    return 1;
 }
 
 int send_packet(t_ping_state *state, uint16_t sequence, int sockfd) {
@@ -94,7 +93,6 @@ int send_packet(t_ping_state *state, uint16_t sequence, int sockfd) {
     struct sockaddr *addr;
     socklen_t addr_len;
     
-    // Determine address based on sockfd
     if (sockfd == state->conn.ipv4.sockfd) {
         addr = (struct sockaddr*)&state->conn.ipv4.addr;
         addr_len = state->conn.ipv4.addr_len;
@@ -108,6 +106,7 @@ int send_packet(t_ping_state *state, uint16_t sequence, int sockfd) {
         perror("sendto");
         return 1;
     }
+	
     if ((size_t)bytes_sent != state->opts.psize) {
         fprintf(stderr, "sendto: partial packet sent (%zd of %zu bytes)\n", 
                 bytes_sent, state->opts.psize);
