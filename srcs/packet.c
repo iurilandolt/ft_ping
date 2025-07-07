@@ -9,17 +9,17 @@ int init_packet_system(t_ping_state *state) {
 	return 0;
 }
 
-void create_packet(t_ping_state *state, uint16_t sequence) {
+t_packet_entry* create_packet(t_ping_state *state, uint16_t sequence) {
 	t_packet_entry *entry = malloc(sizeof(t_packet_entry));
 	if (!entry) {
 		fprintf(stderr, "malloc failed for packet entry\n");
-		return;
+		return NULL;
 	}
 	entry->packet = malloc(state->opts.psize);
 	if (!entry->packet) {
 		fprintf(stderr, "malloc failed for packet %d\n", sequence);
 		free(entry);
-		return;
+		return NULL;
 	}
 	
 	entry->sequence = sequence;
@@ -43,6 +43,8 @@ void create_packet(t_ping_state *state, uint16_t sequence) {
 	icmp->checksum = 0;
 	fill_packet_data(state, sequence);
 	icmp->checksum = calculate_checksum(state, sequence);
+	
+	return entry;
 }
 
 t_packet_entry* find_packet(t_ping_state *state, uint16_t sequence) {

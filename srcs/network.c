@@ -55,6 +55,7 @@ int createSocket(t_ping_state *state, char **argv) {
 }
 
 
+
 int receive_packet(t_ping_state *state, int sockfd) {
     char buffer[1024];
     struct sockaddr_storage from;
@@ -83,13 +84,27 @@ int receive_packet(t_ping_state *state, int sockfd) {
     return 1;
 }
 
-int send_packet(t_ping_state *state, uint16_t sequence, int sockfd) {
-    t_packet_entry *entry = find_packet(state, sequence);
-    if (!entry) {
-        fprintf(stderr, "Packet %d not found\n", sequence);
-        return 1;
+static int send_ok(t_ping_state *state, uint16_t sequence) {
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    
+    // Check count limit
+    if (state->opts.count != -1 && sequence > state->opts.count) {
+        return 0;
     }
     
+    // Check timing - preload packets send immediately, others need 1 second interval
+    if (state->stats.preload_sent < state->opts.preload) {
+        return 1; // Preload packet
+    } else if (state->stats.last_send_time.tv_sec == 0) {
+        return 1; // First packet
+    } else {
+        long elapsed = timeval_diff_ms(&state->stats.last_send_time, &now);
+        return (elapsed >= 1000); // Regular 1-second interval
+    }
+}
+
+static int send_packet(t_ping_state *state, t_packet_entry *packet, int sockfd) {
     struct sockaddr *addr;
     socklen_t addr_len;
     
@@ -101,16 +116,67 @@ int send_packet(t_ping_state *state, uint16_t sequence, int sockfd) {
         addr_len = state->conn.ipv6.addr_len;
     }
     
-    ssize_t bytes_sent = sendto(sockfd, entry->packet, state->opts.psize, 0, addr, addr_len);
+    ssize_t bytes_sent = sendto(sockfd, packet->packet, state->opts.psize, 0, addr, addr_len);
     if (bytes_sent < 0) {
         perror("sendto");
         return 1;
     }
-	
+    
     if ((size_t)bytes_sent != state->opts.psize) {
         fprintf(stderr, "sendto: partial packet sent (%zd of %zu bytes)\n", 
                 bytes_sent, state->opts.psize);
         return 1;
     }
     return 0;
+}
+
+static void update_stats(t_ping_state *state, t_packet_entry *packet, uint16_t *sequence) {
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    
+    // Update packet timing
+    packet->send_time = now;
+    
+    // Update stats
+    if (state->stats.packets_sent == 0) {
+        gettimeofday(&state->stats.first_packet_time, NULL);
+    }
+    state->stats.packets_sent++;
+    if (state->stats.preload_sent < state->opts.preload) {
+        state->stats.preload_sent++;
+    }
+    state->stats.last_send_time = now;
+    (*sequence)++;
+    
+    // Update transmission_complete flag
+    if (state->opts.count != -1 && *sequence > state->opts.count) {
+        state->stats.transmission_complete = 1;
+    }
+}
+
+int send_ping(t_ping_state *state, uint16_t *sequence, int target_sockfd) {
+    // Validation: should we send?
+    if (!send_ok(state, *sequence)) {
+        // Update transmission_complete even if we don't send
+        if (state->opts.count != -1 && *sequence > state->opts.count) {
+            state->stats.transmission_complete = 1;
+        }
+        return 0;
+    }
+    
+    // Create packet and get pointer
+    t_packet_entry *packet = create_packet(state, *sequence);
+    if (!packet) {
+        fprintf(stderr, "Failed to create packet %d\n", *sequence);
+        return 1;
+    }
+    
+    // THE ACTUAL PING MOMENT! 🏓
+    if (send_packet(state, packet, target_sockfd) == 0) {
+        // Update all stats and counters
+        update_stats(state, packet, sequence);
+        return 0; // Success
+    }
+    
+    return 1; // Send failed
 }

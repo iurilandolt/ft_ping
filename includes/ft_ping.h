@@ -24,7 +24,7 @@
 
 
 #define PING_PKT_S 56			// ping packet size
-
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 typedef struct s_ping_pkg {
     struct icmphdr header;
     char msg[];
@@ -73,6 +73,7 @@ typedef struct s_ping_state {
         struct timeval last_packet_time;
         struct timeval last_send_time;
         int preload_sent;
+        int transmission_complete;  // boolean: all packets sent
 	} stats;
 	struct {
         int verbose;     // -v flag
@@ -86,7 +87,6 @@ typedef struct s_ping_state {
 // signals
 void handleSignals(int signum, siginfo_t *info, void *ptr);
 void setupSignals(t_ping_state *state);
-void setup_alarm(t_ping_state *state);
 // io
 int parseArgs(t_ping_state *state, int argc, char **argv);
 void print_stats(t_ping_state *state);
@@ -97,10 +97,15 @@ void print_ping_reply(t_ping_state *state, size_t icmp_size, struct icmphdr *icm
 int resolveHost(t_ping_state *state, char **argv);
 int createSocket(t_ping_state *state, char **argv);
 int receive_packet(t_ping_state *state, int sockfd);
-int send_packet(t_ping_state *state, uint16_t sequence, int sockfd);
+int send_ping(t_ping_state *state, uint16_t *sequence, int target_sockfd);
+// poll
+int setupPoll(t_ping_state *state, struct pollfd *fds);
+void handle_timeouts(t_ping_state *state);
+int get_next_poll_timeout(t_ping_state *state);
+long timeval_diff_ms(struct timeval *start, struct timeval *end);
 // packets
 int init_packet_system(t_ping_state *state);
-void create_packet(t_ping_state *state, uint16_t sequence);
+t_packet_entry* create_packet(t_ping_state *state, uint16_t sequence);
 t_packet_entry* find_packet(t_ping_state *state, uint16_t sequence);
 void remove_packet(t_ping_state *state, uint16_t sequence);
 void cleanup_packets(t_ping_state *state);
