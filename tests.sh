@@ -11,7 +11,7 @@ GRAY='\033[0;90m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-TARGET="127.0.0.1"
+TARGET="::1"
 
 
 TOTAL_TESTS=0

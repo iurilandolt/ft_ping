@@ -33,6 +33,7 @@ typedef struct s_ping_pkg {
 typedef struct s_packet_entry {
     uint16_t sequence;
     t_ping_pkg *packet;
+    struct timeval send_time;
     struct s_packet_entry *next;
 } t_packet_entry;
 
