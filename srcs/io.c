@@ -83,22 +83,18 @@ int parseArgs(t_ping_state *state, int argc, char **argv) {
 // Add these functions to the existing io.c file
 
 void print_stats(t_ping_state *state) {
-    struct timeval end_time;
-    
-    // Use the time of the last received packet, or current time if no packets received
-    if (state->stats.packets_received > 0) {
-        end_time = state->stats.last_packet_time;
-    } else {
-        gettimeofday(&end_time, NULL);
+    // Calculate total elapsed time from first packet to last packet sent
+    double total_time = 0.0;
+    if (state->stats.packets_sent > 0) {
+        if (state->stats.packets_sent == 1) {
+            // Only one packet sent - time should be 0
+            total_time = 0.0;
+        } else {
+            // Time from first packet sent to last packet sent
+            total_time = (state->stats.last_send_time.tv_sec - state->stats.first_packet_time.tv_sec) * 1000.0 + 
+                         (state->stats.last_send_time.tv_usec - state->stats.first_packet_time.tv_usec) / 1000.0;
+        }
     }
-    
-    // Calculate time from first packet sent to last packet received
-    struct timeval start_time = (state->stats.packets_sent > 0) ? 
-                               state->stats.first_packet_time : 
-                               state->stats.start_time;
-    
-    double total_time = (end_time.tv_sec - start_time.tv_sec) * 1000.0 + 
-                       (end_time.tv_usec - start_time.tv_usec) / 1000.0;
 
     printf("\n--- %s ping statistics ---\n", state->conn.target);
     printf("%ld packets transmitted, %ld received, %.0f%% packet loss, time %.0fms\n",

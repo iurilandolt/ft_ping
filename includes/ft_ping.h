@@ -86,6 +86,7 @@ typedef struct s_ping_state {
 // signals
 void handleSignals(int signum, siginfo_t *info, void *ptr);
 void setupSignals(t_ping_state *state);
+void setup_alarm(t_ping_state *state);
 // io
 int parseArgs(t_ping_state *state, int argc, char **argv);
 void print_stats(t_ping_state *state);

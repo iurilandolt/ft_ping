@@ -83,15 +83,16 @@ static void handle_timeouts(t_ping_state *state) {
         long elapsed = timeval_diff_ms(&current->send_time, &now);
         
         if (elapsed >= state->opts.timeout * 1000) {
+            // Remove timed out packet
             if (prev == NULL) {
                 state->sent_packets = current->next;
             } else {
                 prev->next = current->next;
             }
             
-            // if (state->opts.verbose) {
-            //     printf("Request timeout for icmp_seq %d\n", current->sequence);
-            // }
+            if (state->opts.verbose) {
+                printf("Request timeout for icmp_seq %d\n", current->sequence);
+            }
             
             t_packet_entry *to_free = current;
             current = current->next;
@@ -108,35 +109,23 @@ static int get_next_poll_timeout(t_ping_state *state, int all_packets_sent) {
     struct timeval now;
     gettimeofday(&now, NULL);
     
-    // If we still need to send packets, use 1-second interval timing
-    if (!all_packets_sent) {
-        if (state->stats.preload_sent >= state->opts.preload) {
-            // Normal packets - use 1 second intervals
-            if (state->stats.last_send_time.tv_sec != 0) {
-                long since_last = timeval_diff_ms(&state->stats.last_send_time, &now);
-                int until_next_send = 1000 - since_last;
-                if (until_next_send > 0) {
-                    return until_next_send;
-                }
-            }
+    // If we need to send more packets, use send interval timing
+    if (!all_packets_sent && state->stats.preload_sent >= state->opts.preload) {
+        if (state->stats.last_send_time.tv_sec != 0) {
+            long since_last = timeval_diff_ms(&state->stats.last_send_time, &now);
+            int until_next_send = 1000 - since_last;
+            return (until_next_send > 0) ? until_next_send : 0;
         }
-        // Preload packets or ready to send - return small timeout
-        return 1;
+        return 0; // Send immediately if no last send time
     }
     
-    // All packets sent - use short grace period like real ping (~100ms)
-    if (state->sent_packets != NULL) {
-        long since_last_send = timeval_diff_ms(&state->stats.last_send_time, &now);
-        long grace_period = 100; // Short grace period like real ping
-        
-        if (since_last_send >= grace_period) {
-            return -1; // Time to exit
-        }
-        
-        return grace_period - since_last_send;
+    // When all packets are sent, give minimal grace period for replies
+    if (all_packets_sent) {
+        return 100; // Short grace period for late replies
     }
     
-    return -1; // No packets pending, exit
+    // Still in preload phase - don't wait, send immediately
+    return 0;
 }
 
 int main(int argc, char **argv) {
@@ -152,6 +141,7 @@ int main(int argc, char **argv) {
         return ret = 1;
     }
     setupSignals(&state);
+    setup_alarm(&state);
     
     memset(&state.stats, 0, sizeof(state.stats));
     gettimeofday(&state.stats.start_time, NULL);
@@ -166,7 +156,7 @@ int main(int argc, char **argv) {
     while (!all_packets_sent || state.sent_packets != NULL) {
         // Try to send packet if it's time
         if (should_send_packet_now(&state, sequence)) {
-            if (send_packet_now(&state, &sequence, target_sockfd) == 0) {
+            if ((ret = send_packet_now(&state, &sequence, target_sockfd) == 0)) {
                 // Packet sent successfully
             }
         }
@@ -179,7 +169,7 @@ int main(int argc, char **argv) {
         // Get appropriate timeout for poll
         int poll_timeout = get_next_poll_timeout(&state, all_packets_sent);
         if (poll_timeout < 0) {
-            break; // No more work to do
+            break;
         }
         
         int poll_result = poll(fds, 2, poll_timeout);
@@ -193,7 +183,6 @@ int main(int argc, char **argv) {
                 }
             }
         } else if (poll_result == 0) {
-            // Timeout occurred - clean up any expired packets
             handle_timeouts(&state);
         } else if (poll_result < 0 && errno != EINTR) {
             fprintf(stderr, "poll: %s\n", strerror(errno));
@@ -207,5 +196,5 @@ int main(int argc, char **argv) {
     close(state.conn.ipv4.sockfd);
     close(state.conn.ipv6.sockfd);
 
-    return ret;
+    return (state.stats.packets_received == 0) ? 1 : ret;
 }

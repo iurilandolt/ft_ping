@@ -11,6 +11,7 @@ void setupSignals(t_ping_state *state) {
 	sigaction(SIGINT, &handler, NULL);
 	sigaction(SIGTERM, &handler, NULL);
 	sigaction(SIGQUIT, &handler, NULL);
+	sigaction(SIGALRM, &handler, NULL);
 
 	static struct sigaction ignore;
 	ignore.sa_handler = SIG_IGN;
@@ -21,6 +22,9 @@ void setupSignals(t_ping_state *state) {
 }
 
 void handleSignals(int signum, siginfo_t *info, void *ptr) {
+	(void)info;
+	(void)ptr;
+	
 	if (signum == SIGINT || signum == SIGTERM || signum == SIGQUIT) {
 		printf("\nReceived signal %d, exiting...\n", signum);
 		cleanup_packets(state_ptr);
@@ -28,7 +32,33 @@ void handleSignals(int signum, siginfo_t *info, void *ptr) {
 		close(state_ptr->conn.ipv6.sockfd);
 		state_ptr = NULL; 
 		exit(0); 
+	} else if (signum == SIGALRM) {
+		// Alarm fired - time to exit gracefully
+		print_stats(state_ptr);
+		cleanup_packets(state_ptr);
+		close(state_ptr->conn.ipv4.sockfd);
+		close(state_ptr->conn.ipv6.sockfd);
+		int exit_code = (state_ptr->stats.packets_received == 0) ? 1 : 0;
+		exit(exit_code);
 	}
-	(void)info;
-	(void)ptr;
+}
+
+void setup_alarm(t_ping_state *state) {
+	if (state->opts.count == -1) {
+		// Infinite ping - no alarm
+		return;
+	}
+	
+	// Calculate total expected runtime
+	// System ping waits: sending_time + timeout for last packet
+	int remaining_packets = state->opts.count - state->opts.preload;
+	if (remaining_packets <= 0) {
+		remaining_packets = 0;
+	}
+	
+	// Total time = time to send all packets + timeout for the last packet
+	unsigned int total_seconds = remaining_packets + state->opts.timeout;
+	
+	// Set the alarm
+	alarm(total_seconds);
 }
