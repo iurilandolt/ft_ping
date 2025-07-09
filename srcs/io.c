@@ -1,5 +1,15 @@
 #include "../includes/ft_ping.h"
 
+/**
+ * @param str - string to parse
+ * @param name - parameter name for error messages
+ * @param min - minimum allowed value
+ * @param max - maximum allowed value
+ * @param result - pointer to store parsed value
+ * @return 0 on success, -1 on failure
+ * 
+ * Parses string as integer and validates it's within specified range
+ */
 static int parse_int_range(const char *str, const char *name, long min, long max, long *result) {
     char *endptr;
     errno = 0;
@@ -15,7 +25,14 @@ static int parse_int_range(const char *str, const char *name, long min, long max
     return 0;
 }
 
-
+/**
+ * @param state - ping state to populate with parsed options
+ * @param argc - argument count
+ * @param argv - argument vector
+ * @return 0 on success, 1 on failure
+ * 
+ * Parses command line arguments and populates ping options and target
+ */
 int parseArgs(t_ping_state *state, int argc, char **argv) {
     int opt;
     
@@ -44,7 +61,7 @@ int parseArgs(t_ping_state *state, int argc, char **argv) {
 				if (parse_int_range(optarg, "packet size", 0, 65507, &size) != 0) {
 					return 1;
 				}
-				state->opts.psize = size; // + sizeof(struct icmphdr)
+				state->opts.psize = size;
 				break;
 			}
 
@@ -58,7 +75,7 @@ int parseArgs(t_ping_state *state, int argc, char **argv) {
 			}
 
 			case 'W': {
-				long timeout; // what is the def state->opts.timeout ?
+				long timeout;
 				if (parse_int_range(optarg, "timeout", 1, 2099999, &timeout) != 0) {
 					return 1;
 				}
@@ -80,17 +97,17 @@ int parseArgs(t_ping_state *state, int argc, char **argv) {
     return 0;
 }
 
-// Add these functions to the existing io.c file
-
+/**
+ * @param state - ping state containing statistics and target info
+ * 
+ * Prints final ping statistics including packet loss and RTT measurements
+ */
 void print_stats(t_ping_state *state) {
-    // Calculate total elapsed time from first packet to last packet sent
     double total_time = 0.0;
     if (state->stats.packets_sent > 0) {
         if (state->stats.packets_sent == 1) {
-            // Only one packet sent - time should be 0
             total_time = 0.0;
         } else {
-            // Time from first packet sent to last packet sent
             total_time = (state->stats.last_send_time.tv_sec - state->stats.first_packet_time.tv_sec) * 1000.0 + 
                          (state->stats.last_send_time.tv_usec - state->stats.first_packet_time.tv_usec) / 1000.0;
         }
@@ -111,6 +128,11 @@ void print_stats(t_ping_state *state) {
     }
 }
 
+/**
+ * @param state - ping state containing verbose flag and socket info
+ * 
+ * Prints verbose socket and connection information when verbose flag is set
+ */
 void print_verbose_info(t_ping_state *state) {
     if (!state->opts.verbose) {
         return;
@@ -136,6 +158,11 @@ void print_verbose_info(t_ping_state *state) {
            family_str, state->conn.target);
 }
 
+/**
+ * @param state - ping state containing target and packet size info
+ * 
+ * Prints initial ping header with target address and packet size information
+ */
 void print_default_info(t_ping_state *state) {
     size_t icmp_header_size = (state->conn.target_family == AF_INET) ? 
                             sizeof(struct icmphdr) : 
@@ -147,18 +174,25 @@ void print_default_info(t_ping_state *state) {
                      state->conn.ipv6.addr_str;
     
     if (state->conn.target_family == AF_INET) {
-        size_t total_with_ip = data_size + icmp_header_size + 20; // +20 for IPv4 header
+        size_t total_with_ip = data_size + icmp_header_size + 20;
         printf("PING %s (%s) %zu(%zu) bytes of data.\n", 
             state->conn.target, addr_str, 
-            data_size,        // 56
-            total_with_ip);   // 84
+            data_size, total_with_ip);
     } else {
         printf("PING %s (%s) %zu data bytes\n", 
-            state->conn.target, addr_str, 
-            data_size);       // 56
+            state->conn.target, addr_str, data_size);
     }
 }
 
+/**
+ * @param state - ping state containing verbose flag and address info
+ * @param icmp_size - size of received ICMP packet
+ * @param icmp_header - ICMP header containing sequence and ID
+ * @param ttl - time-to-live value
+ * @param rtt - round-trip time in milliseconds
+ * 
+ * Prints formatted ping reply message with packet details
+ */
 void print_ping_reply(t_ping_state *state, size_t icmp_size, 
                      struct icmphdr *icmp_header, int ttl, double rtt) {
     uint16_t sequence = ntohs(icmp_header->un.echo.sequence);

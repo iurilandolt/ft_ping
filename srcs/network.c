@@ -1,5 +1,12 @@
 #include "../includes/ft_ping.h"
 
+/**
+ * @param state - ping state to populate with resolved address info
+ * @param argv - command line arguments for error reporting
+ * @return 0 on success, 1 on failure
+ * 
+ * Resolves target hostname to IP address and populates connection info
+ */
 int resolveHost(t_ping_state *state, char **argv) {
 	struct addrinfo hints, *result;
 	
@@ -35,7 +42,13 @@ int resolveHost(t_ping_state *state, char **argv) {
 	return 0;
 }
 
-
+/**
+ * @param state - ping state to store socket file descriptors
+ * @param argv - command line arguments for error reporting
+ * @return 0 on success, 1 on failure
+ * 
+ * Creates IPv4 and IPv6 raw sockets and sets them to non-blocking mode
+ */
 int createSocket(t_ping_state *state, char **argv) {
 	int flags;
 	state->conn.ipv4.sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
@@ -54,8 +67,13 @@ int createSocket(t_ping_state *state, char **argv) {
 	return 0;
 }
 
-
-
+/**
+ * @param state - ping state containing packet tracking and statistics
+ * @param sockfd - socket file descriptor to receive from
+ * @return 0 on successful packet reception, 1 on failure or no packet
+ * 
+ * Receives ICMP reply packet and processes it if it matches a sent packet
+ */
 int receive_packet(t_ping_state *state, int sockfd) {
     char buffer[1024];
     struct sockaddr_storage from;
@@ -84,26 +102,39 @@ int receive_packet(t_ping_state *state, int sockfd) {
     return 1;
 }
 
+/**
+ * @param state - ping state containing options and timing info
+ * @param sequence - sequence number of packet to check
+ * @return 1 if packet should be sent, 0 if not
+ * 
+ * Determines if a packet should be sent based on count limits and timing
+ */
 static int send_ok(t_ping_state *state, uint16_t sequence) {
     struct timeval now;
     gettimeofday(&now, NULL);
     
-    // Check count limit
     if (state->opts.count != -1 && sequence > state->opts.count) {
         return 0;
     }
     
-    // Check timing - preload packets send immediately, others need 1 second interval
     if (state->stats.preload_sent < state->opts.preload) {
-        return 1; // Preload packet
+        return 1;
     } else if (state->stats.last_send_time.tv_sec == 0) {
-        return 1; // First packet
+        return 1;
     } else {
         long elapsed = timeval_diff_ms(&state->stats.last_send_time, &now);
-        return (elapsed >= 1000); // Regular 1-second interval
+        return (elapsed >= 1000);
     }
 }
 
+/**
+ * @param state - ping state containing connection info
+ * @param packet - packet entry to send
+ * @param sockfd - socket file descriptor to send through
+ * @return 0 on success, 1 on failure
+ * 
+ * Sends ICMP packet through the specified socket
+ */
 static int send_packet(t_ping_state *state, t_packet_entry *packet, int sockfd) {
     struct sockaddr *addr;
     socklen_t addr_len;
@@ -130,14 +161,19 @@ static int send_packet(t_ping_state *state, t_packet_entry *packet, int sockfd) 
     return 0;
 }
 
+/**
+ * @param state - ping state to update with send statistics
+ * @param packet - packet entry that was sent
+ * @param sequence - pointer to sequence number to increment
+ * 
+ * Updates packet timing, send statistics, and transmission completion status
+ */
 static void update_stats(t_ping_state *state, t_packet_entry *packet, uint16_t *sequence) {
     struct timeval now;
     gettimeofday(&now, NULL);
     
-    // Update packet timing
     packet->send_time = now;
     
-    // Update stats
     if (state->stats.packets_sent == 0) {
         gettimeofday(&state->stats.first_packet_time, NULL);
     }
@@ -148,35 +184,37 @@ static void update_stats(t_ping_state *state, t_packet_entry *packet, uint16_t *
     state->stats.last_send_time = now;
     (*sequence)++;
     
-    // Update transmission_complete flag
     if (state->opts.count != -1 && *sequence > state->opts.count) {
         state->stats.transmission_complete = 1;
     }
 }
 
+/**
+ * @param state - ping state containing options and packet tracking
+ * @param sequence - pointer to current sequence number
+ * @param target_sockfd - socket file descriptor for target protocol
+ * @return 0 on success, 1 on failure
+ * 
+ * Main packet sending function - validates, creates, and sends ICMP packets
+ */
 int send_ping(t_ping_state *state, uint16_t *sequence, int target_sockfd) {
-    // Validation: should we send?
     if (!send_ok(state, *sequence)) {
-        // Update transmission_complete even if we don't send
         if (state->opts.count != -1 && *sequence > state->opts.count) {
             state->stats.transmission_complete = 1;
         }
         return 0;
     }
     
-    // Create packet and get pointer
     t_packet_entry *packet = create_packet(state, *sequence);
     if (!packet) {
         fprintf(stderr, "Failed to create packet %d\n", *sequence);
         return 1;
     }
     
-    // THE ACTUAL PING MOMENT! 🏓
     if (send_packet(state, packet, target_sockfd) == 0) {
-        // Update all stats and counters
         update_stats(state, packet, sequence);
-        return 0; // Success
+        return 0;
     }
     
-    return 1; // Send failed
+    return 1;
 }

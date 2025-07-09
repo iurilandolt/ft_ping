@@ -8,6 +8,7 @@ static void ready(t_ping_state *state) {
     print_default_info(state);
 }
 
+
 static void end(t_ping_state *state) {
     print_stats(state);
     cleanup_packets(state);

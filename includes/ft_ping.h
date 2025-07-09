@@ -23,7 +23,7 @@
 #include <arpa/inet.h>
 
 
-#define PING_PKT_S 56			// ping packet size
+#define PING_PKT_S 56			
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 typedef struct s_ping_pkg {
     struct icmphdr header;
@@ -38,7 +38,7 @@ typedef struct s_packet_entry {
 } t_packet_entry;
 
 typedef struct s_ping_state {
-	t_packet_entry *sent_packets;  // Linked list of sent packets
+	t_packet_entry *sent_packets;  
 	struct {
         char *target;
 		int target_family;
@@ -64,7 +64,7 @@ typedef struct s_ping_state {
 	struct {
         long packets_sent;
         long packets_received;
-        double min_rtt; // round-trip time
+        double min_rtt; 
         double max_rtt; 
 		double avg_rtt;
         double sum_rtt;
@@ -73,7 +73,7 @@ typedef struct s_ping_state {
         struct timeval last_packet_time;
         struct timeval last_send_time;
         int preload_sent;
-        int transmission_complete;  // boolean: all packets sent
+        int transmission_complete;  
 	} stats;
 	struct {
         int verbose;     // -v flag
