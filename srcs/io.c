@@ -41,7 +41,7 @@ int parseArgs(t_ping_state *state, int argc, char **argv) {
     state->opts.psize = PING_PKT_S;
     state->opts.preload = 0;
     state->opts.timeout = 4;
-    
+    // delimiter for flags that require arguments
     while ((opt = getopt(argc, argv, "vc:s:l:W:")) != -1) {
         switch (opt) {
             case 'v':
@@ -108,8 +108,8 @@ void print_stats(t_ping_state *state) {
         if (state->stats.packets_sent == 1) {
             total_time = 0.0;
         } else {
-            total_time = (state->stats.last_send_time.tv_sec - state->stats.first_packet_time.tv_sec) * 1000.0 + 
-                         (state->stats.last_send_time.tv_usec - state->stats.first_packet_time.tv_usec) / 1000.0;
+            total_time = (state->stats.last_packet_time.tv_sec - state->stats.first_packet_time.tv_sec) * 1000.0 + 
+                         (state->stats.last_packet_time.tv_usec - state->stats.first_packet_time.tv_usec) / 1000.0;
         }
     }
 

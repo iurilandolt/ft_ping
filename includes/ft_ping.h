@@ -68,10 +68,8 @@ typedef struct s_ping_state {
         double max_rtt; 
 		double avg_rtt;
         double sum_rtt;
-        struct timeval start_time;
         struct timeval first_packet_time;
         struct timeval last_packet_time;
-        struct timeval last_send_time;
         int preload_sent;
         int transmission_complete;  
 	} stats;

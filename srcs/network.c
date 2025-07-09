@@ -94,7 +94,6 @@ int receive_packet(t_ping_state *state, int sockfd) {
     
     if (parse_icmp_reply(buffer, bytes_received, &received_sequence, state) == 0) {
         if (find_packet(state, received_sequence)) {
-            gettimeofday(&state->stats.last_packet_time, NULL);
             remove_packet(state, received_sequence);
             return 0; 
         }
@@ -119,10 +118,10 @@ static int send_ok(t_ping_state *state, uint16_t sequence) {
     
     if (state->stats.preload_sent < state->opts.preload) {
         return 1;
-    } else if (state->stats.last_send_time.tv_sec == 0) {
+    } else if (state->stats.last_packet_time.tv_sec == 0) {
         return 1;
     } else {
-        long elapsed = timeval_diff_ms(&state->stats.last_send_time, &now);
+        long elapsed = timeval_diff_ms(&state->stats.last_packet_time, &now);
         return (elapsed >= 1000);
     }
 }
@@ -181,7 +180,7 @@ static void update_stats(t_ping_state *state, t_packet_entry *packet, uint16_t *
     if (state->stats.preload_sent < state->opts.preload) {
         state->stats.preload_sent++;
     }
-    state->stats.last_send_time = now;
+    state->stats.last_packet_time = now;
     (*sequence)++;
     
     if (state->opts.count != -1 && *sequence > state->opts.count) {

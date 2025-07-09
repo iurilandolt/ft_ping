@@ -3,7 +3,6 @@
 static void ready(t_ping_state *state) {
     setupSignals(state);
     memset(&state->stats, 0, sizeof(state->stats));
-    gettimeofday(&state->stats.start_time, NULL);
     print_verbose_info(state);
     print_default_info(state);
 }

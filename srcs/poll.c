@@ -46,8 +46,8 @@ int get_next_poll_timeout(t_ping_state *state) {
     gettimeofday(&now, NULL);
     
     if (!state->stats.transmission_complete && state->stats.preload_sent >= state->opts.preload) {
-        if (state->stats.last_send_time.tv_sec != 0) {
-            long since_last = timeval_diff_ms(&state->stats.last_send_time, &now);
+        if (state->stats.last_packet_time.tv_sec != 0) {
+            long since_last = timeval_diff_ms(&state->stats.last_packet_time, &now);
             int until_next_send = 1000 - since_last;
             return (until_next_send > 0) ? until_next_send : 0;
         }
