@@ -75,30 +75,30 @@ int createSocket(t_ping_state *state, char **argv) {
  * Receives ICMP reply packet and processes it if it matches a sent packet
  */
 int receive_packet(t_ping_state *state, int sockfd) {
-    char buffer[1024];
-    struct sockaddr_storage from;
-    socklen_t fromlen = sizeof(from);
-    uint16_t received_sequence;
+	char buffer[1024];
+	struct sockaddr_storage from;
+	socklen_t fromlen = sizeof(from);
+	uint16_t received_sequence;
 
-    ssize_t bytes_received = recvfrom(sockfd, buffer, sizeof(buffer), MSG_DONTWAIT, 
-                                     (struct sockaddr*)&from, &fromlen);
-    
-    if (bytes_received < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            return 1;
-        } else {
-            perror("recvfrom");
-            return 1;
-        }
-    }
-    
-    if (parse_icmp_reply(buffer, bytes_received, &received_sequence, state) == 0) {
-        if (find_packet(state, received_sequence)) {
-            remove_packet(state, received_sequence);
-            return 0; 
-        }
-    }
-    return 1;
+	ssize_t bytes_received = recvfrom(sockfd, buffer, sizeof(buffer), MSG_DONTWAIT, 
+									 (struct sockaddr*)&from, &fromlen);
+	
+	if (bytes_received < 0) {
+		if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			return 1;
+		} else {
+			perror("recvfrom");
+			return 1;
+		}
+	}
+	
+	if (parse_icmp_reply(buffer, bytes_received, &received_sequence, state) == 0) {
+		if (find_packet(state, received_sequence)) {
+			remove_packet(state, received_sequence);
+			return 0; 
+		}
+	}
+	return 1;
 }
 
 /**
@@ -108,22 +108,22 @@ int receive_packet(t_ping_state *state, int sockfd) {
  * 
  * Determines if a packet should be sent based on count limits and timing
  */
-static int send_ok(t_ping_state *state, uint16_t sequence) {
-    struct timeval now;
-    gettimeofday(&now, NULL);
-    
-    if (state->opts.count != -1 && sequence > state->opts.count) {
-        return 0;
-    }
-    
-    if (state->stats.preload_sent < state->opts.preload) {
-        return 1;
-    } else if (state->stats.last_packet_time.tv_sec == 0) {
-        return 1;
-    } else {
-        long elapsed = timeval_diff_ms(&state->stats.last_packet_time, &now);
-        return (elapsed >= 1000);
-    }
+static int can_send(t_ping_state *state, uint16_t sequence) {
+	struct timeval now;
+	gettimeofday(&now, NULL);
+	
+	if (state->opts.count != -1 && sequence > state->opts.count) {
+		return 0;
+	}
+	
+	if (state->stats.preload_sent < state->opts.preload) {
+		return 1;
+	} else if (state->stats.last_packet_time.tv_sec == 0) {
+		return 1;
+	} else {
+		long elapsed = timeval_diff_ms(&state->stats.last_packet_time, &now);
+		return (elapsed >= 1000);
+	}
 }
 
 /**
@@ -135,29 +135,29 @@ static int send_ok(t_ping_state *state, uint16_t sequence) {
  * Sends ICMP packet through the specified socket
  */
 static int send_packet(t_ping_state *state, t_packet_entry *packet, int sockfd) {
-    struct sockaddr *addr;
-    socklen_t addr_len;
-    
-    if (sockfd == state->conn.ipv4.sockfd) {
-        addr = (struct sockaddr*)&state->conn.ipv4.addr;
-        addr_len = state->conn.ipv4.addr_len;
-    } else {
-        addr = (struct sockaddr*)&state->conn.ipv6.addr;
-        addr_len = state->conn.ipv6.addr_len;
-    }
-    
-    ssize_t bytes_sent = sendto(sockfd, packet->packet, state->opts.psize, 0, addr, addr_len);
-    if (bytes_sent < 0) {
-        perror("sendto");
-        return 1;
-    }
-    
-    if ((size_t)bytes_sent != state->opts.psize) {
-        fprintf(stderr, "sendto: partial packet sent (%zd of %zu bytes)\n", 
-                bytes_sent, state->opts.psize);
-        return 1;
-    }
-    return 0;
+	struct sockaddr *addr;
+	socklen_t addr_len;
+	
+	if (sockfd == state->conn.ipv4.sockfd) {
+		addr = (struct sockaddr*)&state->conn.ipv4.addr;
+		addr_len = state->conn.ipv4.addr_len;
+	} else {
+		addr = (struct sockaddr*)&state->conn.ipv6.addr;
+		addr_len = state->conn.ipv6.addr_len;
+	}
+	
+	ssize_t bytes_sent = sendto(sockfd, packet->packet, state->opts.psize, 0, addr, addr_len);
+	if (bytes_sent < 0) {
+		perror("sendto");
+		return 1;
+	}
+	
+	if ((size_t)bytes_sent != state->opts.psize) {
+		fprintf(stderr, "sendto: partial packet sent (%zd of %zu bytes)\n", 
+				bytes_sent, state->opts.psize);
+		return 1;
+	}
+	return 0;
 }
 
 /**
@@ -168,24 +168,24 @@ static int send_packet(t_ping_state *state, t_packet_entry *packet, int sockfd) 
  * Updates packet timing, send statistics, and transmission completion status
  */
 static void update_stats(t_ping_state *state, t_packet_entry *packet, uint16_t *sequence) {
-    struct timeval now;
-    gettimeofday(&now, NULL);
-    
-    packet->send_time = now;
-    
-    if (state->stats.packets_sent == 0) {
-        gettimeofday(&state->stats.first_packet_time, NULL);
-    }
-    state->stats.packets_sent++;
-    if (state->stats.preload_sent < state->opts.preload) {
-        state->stats.preload_sent++;
-    }
-    state->stats.last_packet_time = now;
-    (*sequence)++;
-    
-    if (state->opts.count != -1 && *sequence > state->opts.count) {
-        state->stats.transmission_complete = 1;
-    }
+	struct timeval now;
+	gettimeofday(&now, NULL);
+	
+	packet->send_time = now;
+	
+	if (state->stats.packets_sent == 0) {
+		gettimeofday(&state->stats.first_packet_time, NULL);
+	}
+	state->stats.packets_sent++;
+	if (state->stats.preload_sent < state->opts.preload) {
+		state->stats.preload_sent++;
+	}
+	state->stats.last_packet_time = now;
+	(*sequence)++;
+	
+	if (state->opts.count != -1 && *sequence > state->opts.count) {
+		state->stats.transmission_complete = 1;
+	}
 }
 
 /**
@@ -197,23 +197,26 @@ static void update_stats(t_ping_state *state, t_packet_entry *packet, uint16_t *
  * Main packet sending function - validates, creates, and sends ICMP packets
  */
 int send_ping(t_ping_state *state, uint16_t *sequence, int target_sockfd) {
-    if (!send_ok(state, *sequence)) {
-        if (state->opts.count != -1 && *sequence > state->opts.count) {
-            state->stats.transmission_complete = 1;
-        }
-        return 0;
-    }
-    
-    t_packet_entry *packet = create_packet(state, *sequence);
-    if (!packet) {
-        fprintf(stderr, "Failed to create packet %d\n", *sequence);
-        return 1;
-    }
-    
-    if (send_packet(state, packet, target_sockfd) == 0) {
-        update_stats(state, packet, sequence);
-        return 0;
-    }
-    
-    return 1;
+	if (!can_send(state, *sequence)) {
+		if (state->opts.count != -1 && *sequence > state->opts.count) {
+			state->stats.transmission_complete = 1;
+		}
+		return 0;
+	}
+	
+	t_packet_entry *packet = create_packet(state, *sequence);
+	if (!packet) {
+		fprintf(stderr, "Failed to create packet %d\n", *sequence);
+		cleanup_packets(state);
+		close(state->conn.ipv4.sockfd);
+		close(state->conn.ipv6.sockfd);
+		exit(1); 
+	}
+	
+	if (send_packet(state, packet, target_sockfd) == 0) {
+		update_stats(state, packet, sequence);
+		return 0;
+	}
+	
+	return 1;
 }

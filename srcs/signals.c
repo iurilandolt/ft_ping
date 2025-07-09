@@ -57,7 +57,8 @@ void handleSignals(int signum, siginfo_t *info, void *ptr) {	(void)info;
 	(void)ptr;
 	
 	if (signum == SIGINT || signum == SIGTERM || signum == SIGQUIT) {
-		printf("\nReceived signal %d, exiting...\n", signum);
+		// printf("\nReceived signal %d, exiting...\n", signum);
+		print_stats(state_ptr);
 		cleanup_packets(state_ptr);
 		close(state_ptr->conn.ipv4.sockfd);
 		close(state_ptr->conn.ipv6.sockfd);
@@ -69,4 +70,5 @@ void handleSignals(int signum, siginfo_t *info, void *ptr) {	(void)info;
 		close(state_ptr->conn.ipv6.sockfd);
 		exit((state_ptr->stats.packets_received == 0) ? 1 : 0);
 	}
+
 }
