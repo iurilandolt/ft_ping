@@ -75,7 +75,8 @@ int createSocket(t_ping_state *state, char **argv) {
  * Receives ICMP reply packet and processes it if it matches a sent packet
  */
 int receive_packet(t_ping_state *state, int sockfd) {
-	char buffer[1024];
+	// char buffer[1024];
+	char buffer[state->opts.psize + 28];
 	struct sockaddr_storage from;
 	socklen_t fromlen = sizeof(from);
 	uint16_t received_sequence;

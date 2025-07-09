@@ -22,7 +22,6 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 
-
 #define PING_PKT_S 56			
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
