@@ -8,6 +8,7 @@
  */
 int init_packet_system(t_ping_state *state) {
 	state->sent_packets = NULL;
+	state->stats.rtt_list = NULL;
 	size_t header_size = (state->conn.target_family == AF_INET) ? 
 						sizeof(struct icmphdr) : 
 						sizeof(struct icmp6_hdr);    
@@ -111,6 +112,7 @@ void cleanup_packets(t_ping_state *state) {
 		free(current);
 		current = next;
 	}
+	cleanup_rtt_list(state);
 	state->sent_packets = NULL;
 }
 
@@ -177,49 +179,6 @@ uint16_t calculate_checksum(t_ping_state *state, uint16_t sequence) {
 
 /**
  * @param buffer - received packet buffer
- * @param ip_header - IP header pointer for IPv4 packets
- * @param icmp_data_size - size of ICMP data payload
- * @param family - address family (AF_INET or AF_INET6)
- * @return round-trip time in milliseconds, -1.0 if no timestamp available
- * 
- * Calculates round-trip time from embedded timestamp in packet payload
- */
-static double calculate_rtt(char *buffer, struct iphdr *ip_header, size_t icmp_data_size, int family) {
-	if (icmp_data_size < sizeof(struct timeval)) {
-		return -1.0; 
-	}
-	
-	struct timeval now, *sent_time;
-	gettimeofday(&now, NULL);
-	
-	if (family == AF_INET) {
-		sent_time = (struct timeval*)(buffer + (ip_header->ihl * 4) + sizeof(struct icmphdr));
-	} else {
-		sent_time = (struct timeval*)(buffer + sizeof(struct icmphdr));
-	}
-	
-	return (now.tv_sec - sent_time->tv_sec) * 1000.0 + 
-		   (now.tv_usec - sent_time->tv_usec) / 1000.0;
-}
-
-/**
- * @param state - ping state containing RTT statistics
- * @param rtt - new round-trip time measurement
- * 
- * Updates min/max/sum RTT statistics with new measurement
- */
-static void update_rtt_stats(t_ping_state *state, double rtt) {
-	if (state->stats.packets_received == 0 || rtt < state->stats.min_rtt) {
-		state->stats.min_rtt = rtt;
-	}
-	if (rtt > state->stats.max_rtt) {
-		state->stats.max_rtt = rtt;
-	}
-	state->stats.sum_rtt += rtt;
-}
-
-/**
- * @param buffer - received packet buffer
  * @param bytes_received - total bytes received
  * @param found_sequence - pointer to store extracted sequence number
  * @param state - ping state containing connection and statistics info
@@ -257,6 +216,7 @@ int parse_icmp_reply(char *buffer, ssize_t bytes_received, uint16_t *found_seque
 					bytes_received - (ip_header->ihl * 4) : 
 					bytes_received;
 	size_t icmp_data_size = icmp_size - sizeof(struct icmphdr);
+
 	int ttl = (state->conn.target_family == AF_INET) ? ip_header->ttl : 64;
 	double rtt = calculate_rtt(buffer, ip_header, icmp_data_size, state->conn.target_family);
 	
@@ -265,3 +225,4 @@ int parse_icmp_reply(char *buffer, ssize_t bytes_received, uint16_t *found_seque
 	
 	return 0;
 }
+

@@ -12,6 +12,7 @@
 #include <limits.h>
 #include <poll.h>
 #include <fcntl.h>
+#include <math.h>
 
 #include <sys/time.h>
 #include <sys/socket.h>
@@ -36,6 +37,11 @@ typedef struct s_packet_entry {
 	struct timeval send_time;
 	struct s_packet_entry *next;
 } t_packet_entry;
+
+typedef struct s_rtt_entry {
+	double rtt;
+	struct s_rtt_entry *next;
+} t_rtt_entry;
 
 typedef struct s_ping_state {
 	t_packet_entry *sent_packets;  
@@ -68,6 +74,7 @@ typedef struct s_ping_state {
 		double max_rtt; 
 		double avg_rtt;
 		double sum_rtt;
+		t_rtt_entry *rtt_list;
 		struct timeval first_packet_time;
 		struct timeval last_packet_time;
 		int preload_sent;
@@ -111,5 +118,12 @@ void cleanup_packets(t_ping_state *state);
 void fill_packet_data(t_ping_state *state, uint16_t sequence);
 uint16_t calculate_checksum(t_ping_state *state, uint16_t sequence);
 int parse_icmp_reply(char *buffer, ssize_t bytes_received, uint16_t *found_sequence, t_ping_state *state);
+// rtt 
+double calculate_rtt(char *buffer, struct iphdr *ip_header, size_t icmp_data_size, int family);
+void update_rtt_stats(t_ping_state *state, double rtt);
+void insert_rtt_sorted(t_ping_state *state, double rtt);
+t_rtt_entry* find_rtt_entry(t_ping_state *state, long position);
+void cleanup_rtt_list(t_ping_state *state);
+double calculate_median_deviation(t_ping_state *state);
 
 #endif

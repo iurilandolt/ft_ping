@@ -124,8 +124,9 @@ void print_stats(t_ping_state *state) {
 	if (state->stats.packets_received > 0) {
 		state->stats.avg_rtt = state->stats.sum_rtt / state->stats.packets_received;
 		if (state->stats.avg_rtt > 0) {
-			printf("rtt min/avg/max = %.3f/%.3f/%.3f ms\n", 
-				state->stats.min_rtt, state->stats.avg_rtt, state->stats.max_rtt); 
+			double mdev = calculate_median_deviation(state);
+			printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n", 
+				state->stats.min_rtt, state->stats.avg_rtt, state->stats.max_rtt, mdev); 
 		}
 	}
 }
