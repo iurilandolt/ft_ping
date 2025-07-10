@@ -108,7 +108,6 @@ double calculate_median_deviation(t_ping_state *state) {
 		return 0.0;
 	}
 	
-	// Find median RTT using helper function
 	long median_pos = state->stats.packets_received / 2;
 	t_rtt_entry *median_entry = find_rtt_entry(state, median_pos);
 	if (!median_entry) return 0.0;
@@ -116,7 +115,6 @@ double calculate_median_deviation(t_ping_state *state) {
 	double median_rtt = median_entry->rtt;
 	long target_pos = median_pos;
 	
-	// Find median deviation without extra memory allocation
 	for (long pos = 0; pos < state->stats.packets_received; pos++) {
 		t_rtt_entry *test_entry = find_rtt_entry(state, pos);
 		if (!test_entry) continue;
@@ -124,7 +122,6 @@ double calculate_median_deviation(t_ping_state *state) {
 		double current_deviation = fabs(test_entry->rtt - median_rtt);
 		long smaller_count = 0;
 		
-		// Count how many deviations are smaller than current_deviation
 		t_rtt_entry *count_current = state->stats.rtt_list;
 		while (count_current) {
 			double dev = fabs(count_current->rtt - median_rtt);
@@ -133,13 +130,10 @@ double calculate_median_deviation(t_ping_state *state) {
 			}
 			count_current = count_current->next;
 		}
-		
-		// If this is the target position, we found our median deviation
-		if (smaller_count == target_pos) {
+				if (smaller_count == target_pos) {
 			return current_deviation;
 		}
 	}
-	
 	return 0.0;
 }
 

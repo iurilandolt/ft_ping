@@ -130,19 +130,17 @@ void fill_packet_data(t_ping_state *state, uint16_t sequence) {
 							 sizeof(struct icmphdr) : 
 							 sizeof(struct icmp6_hdr);
 	size_t data_size = state->opts.psize - icmp_header_size;
+	size_t start_index = 0;
 	
 	if (data_size >= sizeof(struct timeval)) {
 		struct timeval tv;
 		gettimeofday(&tv, NULL);
 		memcpy(&entry->packet->msg, &tv, sizeof(tv));
-		
-		for (size_t i = sizeof(tv); i < data_size; i++) {
-			entry->packet->msg[i] = 0x10 + (i % 48);
-		}
-	} else {
-		for (size_t i = 0; i < data_size; i++) {
-			entry->packet->msg[i] = 0x10 + (i % 48);
-		}
+		start_index = sizeof(struct timeval);
+	}
+	
+	for (size_t i = start_index; i < data_size; i++) {
+		entry->packet->msg[i] = 0x10 + (i % 48);
 	}
 }
 
@@ -197,6 +195,7 @@ int parse_icmp_reply(char *buffer, ssize_t bytes_received, uint16_t *found_seque
 	
 	struct iphdr *ip_header = (state->conn.target_family == AF_INET) ? 
 							(struct iphdr*)buffer : NULL;
+							
 	struct icmphdr *icmp_header = (state->conn.target_family == AF_INET) ? 
 								(struct icmphdr*)(buffer + (ip_header->ihl * 4)) : 
 								(struct icmphdr*)buffer;

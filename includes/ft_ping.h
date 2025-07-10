@@ -23,7 +23,8 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 
-#define PING_PKT_S 56			
+#define PING_PKT_S 56 // Default size of ICMP packet payload
+#define TOTAL_HDR_S 28 // 8 bytes for ICMP header + 20 bytes for IPv4 header			
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 typedef struct s_ping_pkg {
@@ -86,19 +87,15 @@ typedef struct s_ping_state {
 		size_t psize;    // -s flag
 		int preload;     // -l flag
 		int timeout;     // -W flag (in seconds)
+		int ttl;        // -t flag (time to live)
 	} opts;
 } t_ping_state;
 
 // signals
 void handleSignals(int signum, siginfo_t *info, void *ptr);
 void setupSignals(t_ping_state *state);
-// io
+// args
 int parseArgs(t_ping_state *state, int argc, char **argv);
-void print_stats(t_ping_state *state);
-void print_verbose_info(t_ping_state *state);
-void print_default_info(t_ping_state *state);
-void print_ping_reply(t_ping_state *state, size_t icmp_size, struct icmphdr *icmp_header, int ttl, double rtt);
-void print_usage(char *arg, char opt);
 // network
 int resolveHost(t_ping_state *state, char **argv);
 int createSocket(t_ping_state *state, char **argv);
@@ -125,5 +122,11 @@ void insert_rtt_sorted(t_ping_state *state, double rtt);
 t_rtt_entry* find_rtt_entry(t_ping_state *state, long position);
 void cleanup_rtt_list(t_ping_state *state);
 double calculate_median_deviation(t_ping_state *state);
+//verbose
+void print_stats(t_ping_state *state);
+void print_verbose_info(t_ping_state *state);
+void print_default_info(t_ping_state *state);
+void print_ping_reply(t_ping_state *state, size_t icmp_size, struct icmphdr *icmp_header, int ttl, double rtt);
+void print_usage(char *arg, char opt);
 
 #endif

@@ -64,6 +64,20 @@ int createSocket(t_ping_state *state, char **argv) {
 	flags = fcntl(state->conn.ipv6.sockfd, F_GETFL, 0);
 	fcntl(state->conn.ipv6.sockfd, F_SETFL, flags | O_NONBLOCK);
 	
+	// Set TTL for IPv4
+	if (setsockopt(state->conn.ipv4.sockfd, IPPROTO_IP, IP_TTL, 
+				   &state->opts.ttl, sizeof(state->opts.ttl)) < 0) {
+		perror("setsockopt IP_TTL");
+		return 1;
+	}
+	
+	// Set hop limit for IPv6 (equivalent of TTL)
+	if (setsockopt(state->conn.ipv6.sockfd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, 
+				   &state->opts.ttl, sizeof(state->opts.ttl)) < 0) {
+		perror("setsockopt IPV6_UNICAST_HOPS");
+		return 1;
+	}
+	
 	return 0;
 }
 
@@ -75,8 +89,7 @@ int createSocket(t_ping_state *state, char **argv) {
  * Receives ICMP reply packet and processes it if it matches a sent packet
  */
 int receive_packet(t_ping_state *state, int sockfd) {
-	// char buffer[1024];
-	char buffer[state->opts.psize + 28];
+	char buffer[state->opts.psize + TOTAL_HDR_S];
 	struct sockaddr_storage from;
 	socklen_t fromlen = sizeof(from);
 	uint16_t received_sequence;
