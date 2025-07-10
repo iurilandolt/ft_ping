@@ -2,6 +2,7 @@
 #define FT_PING_H
 
 #define _POSIX_C_SOURCE 200809L
+#define _GNU_SOURCE
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -22,6 +23,10 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+
+#ifndef NI_MAXHOST
+#define NI_MAXHOST 1025
+#endif
 
 #define PING_PKT_S 56 // Default size of ICMP packet payload
 #define TOTAL_HDR_S 28 // 8 bytes for ICMP header + 20 bytes for IPv4 header			
@@ -91,6 +96,18 @@ typedef struct s_ping_state {
 	} opts;
 } t_ping_state;
 
+typedef struct s_icmp_context {
+	char *buffer;
+	ssize_t bytes_received;
+	struct iphdr *ip_header;
+	struct icmphdr *icmp_header;
+	uint16_t packet_id;
+	uint16_t sequence;
+	uint16_t expected_pid;
+	struct sockaddr_storage *from;
+	t_ping_state *state;
+} t_icmp_context;
+
 // signals
 void handleSignals(int signum, siginfo_t *info, void *ptr);
 void setupSignals(t_ping_state *state);
@@ -114,7 +131,12 @@ void remove_packet(t_ping_state *state, uint16_t sequence);
 void cleanup_packets(t_ping_state *state);
 void fill_packet_data(t_ping_state *state, uint16_t sequence);
 uint16_t calculate_checksum(t_ping_state *state, uint16_t sequence);
-int parse_icmp_reply(char *buffer, ssize_t bytes_received, uint16_t *found_sequence, t_ping_state *state);
+t_icmp_context create_icmp_context(char *buffer, ssize_t bytes_received, t_ping_state *state, struct sockaddr_storage *from);
+int is_icmp_error(uint8_t icmp_type, int family);
+int is_icmp_reply(uint8_t icmp_type, int family);
+int parse_icmp_reply(char *buffer, ssize_t bytes_received, t_ping_state *state, struct sockaddr_storage *from);
+int handle_icmp_errors(t_icmp_context *ctx);
+int handle_icmp_replies(t_icmp_context *ctx);
 // rtt 
 double calculate_rtt(char *buffer, struct iphdr *ip_header, size_t icmp_data_size, int family);
 void update_rtt_stats(t_ping_state *state, double rtt);

@@ -92,7 +92,6 @@ int receive_packet(t_ping_state *state, int sockfd) {
 	char buffer[state->opts.psize + TOTAL_HDR_S];
 	struct sockaddr_storage from;
 	socklen_t fromlen = sizeof(from);
-	uint16_t received_sequence;
 
 	ssize_t bytes_received = recvfrom(sockfd, buffer, sizeof(buffer), MSG_DONTWAIT, 
 									 (struct sockaddr*)&from, &fromlen);
@@ -106,13 +105,7 @@ int receive_packet(t_ping_state *state, int sockfd) {
 		}
 	}
 	
-	if (parse_icmp_reply(buffer, bytes_received, &received_sequence, state) == 0) {
-		if (find_packet(state, received_sequence)) {
-			remove_packet(state, received_sequence);
-			return 0; 
-		}
-	}
-	return 1;
+	return parse_icmp_reply(buffer, bytes_received, state, &from);
 }
 
 /**

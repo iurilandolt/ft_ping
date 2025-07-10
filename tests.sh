@@ -210,4 +210,13 @@ run_test "Error: missing flag value" "./ft_ping -c $TARGET" "ping -c $TARGET" 1
 run_test "Error: multiple invalid flags" "./ft_ping -c 0 -W 0 -l 5 $TARGET" "ping -c 0 -W 0 -l 5 $TARGET" 1
 run_test "Error: flag without argument" "./ft_ping -s -c 1 $TARGET" "ping -s -c 1 $TARGET" 1
 
+# TTL TESTS (6 tests)
+echo -e "\n${BOLD}${CYAN}🌐 Testing TTL (Time To Live)${NC}"
+run_test "TTL: minimum value (1)" "./ft_ping -t 1 -c 2 google.com" "ping -t 1 -c 2 google.com" 1
+run_test "TTL: low value (2)" "./ft_ping -t 2 -c 2 google.com" "ping -t 2 -c 2 google.com" 1
+run_test "TTL: medium value (5)" "./ft_ping -t 5 -c 2 google.com" "ping -t 5 -c 2 google.com" 1
+run_test "TTL: normal value (64)" "./ft_ping -t 64 -c 2 google.com" "ping -t 64 -c 2 google.com"
+run_test "TTL: maximum value (255)" "./ft_ping -t 255 -c 2 google.com" "ping -t 255 -c 2 google.com"
+run_test "TTL: invalid range (256)" "./ft_ping -t 256 -c 1 google.com" "ping -t 256 -c 1 google.com" 1
+
 show_summary

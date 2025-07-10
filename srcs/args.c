@@ -43,7 +43,7 @@ int parseArgs(t_ping_state *state, int argc, char **argv) {
 	state->opts.timeout = 4;
 	state->opts.ttl = 64;
 
-	while ((opt = getopt(argc, argv, "vhc:s:l:W:t")) != -1) {
+	while ((opt = getopt(argc, argv, "vhc:s:l:W:t:")) != -1) {
 		switch (opt) {
 			case 'v':
 				state->opts.verbose = 1;
@@ -82,7 +82,6 @@ int parseArgs(t_ping_state *state, int argc, char **argv) {
 				state->opts.timeout = timeout;
 				break;
 			}
-				break;
 			case 't': {
 				long ttl;
 				if (parse_int_range(optarg, "ttl", 1, 255, &ttl) != 0) {
