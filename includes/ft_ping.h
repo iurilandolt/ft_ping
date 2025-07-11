@@ -137,7 +137,7 @@ void			fill_packet_data(t_ping_state *state, uint16_t sequence);
 int				parse_icmp_reply(char *buffer, ssize_t bytes_received, t_ping_state *state, struct sockaddr_storage *from);
 // rtt 
 double			calculate_rtt(char *buffer, struct iphdr *ip_header, size_t icmp_data_size, int family);
-double			calculate_median_deviation(t_ping_state *state);
+double			calculate_mean_deviation(t_ping_state *state);
 void			update_rtt_stats(t_ping_state *state, double rtt);
 void			cleanup_rtt_list(t_ping_state *state);
 //verbose
