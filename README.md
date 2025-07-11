@@ -284,9 +284,29 @@ The `-W` flag sets the maximum time (in seconds) to wait for each individual pin
 - By adjusting TTL, you can trace the path to a host (like `traceroute` does), or test how far packets get before being dropped.
 
 ### Example
-- `./ft_ping -t 1 8.8.8.8`  
-  The packet will only survive one hop. If the destination is farther, you'll receive a "Time Exceeded" error from the first router.
+  *The packet will only survive one hop. If the destination is farther, you'll receive a "Time Exceeded" error from the first router.*
+```
+./ft_ping -c 2 -t 1 google.com                                                                                                                   polling ✔
+PING google.com (142.250.185.14) 56(84) bytes of data.
+From Linksys00831 (10.195.1.1): icmp_seq=1 Time to live exceeded
+From Linksys00831 (10.195.1.1): icmp_seq=2 Time to live exceeded
 
+--- google.com ping statistics ---
+2 packets transmitted, 2 received, 0% packet loss, time 1002ms
++2 errors.
+
+```
+*The packet makes it past your gateway, but dies at your ISP's first router.*
+```
+./ft_ping -c 2 -t 5 google.com                                                                                                                   polling ✗
+PING google.com (142.250.185.14) 56(84) bytes of data.
+From lis2-cr1-be10-200.cprm.net (195.8.30.241): icmp_seq=1 Time to live exceeded
+From lis2-cr1-be10-200.cprm.net (195.8.30.241): icmp_seq=2 Time to live exceeded
+
+--- google.com ping statistics ---
+2 packets transmitted, 2 received, 0% packet loss, time 1001ms
++2 errors.
+```
 **Summary:**  
 - **TTL (IPv4)** and **Hop Limit (IPv6)** control how far packets can travel.
 - Low TTL values help diagnose routing and network reachability issues.
