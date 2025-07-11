@@ -126,6 +126,29 @@ void print_ping_reply(t_ping_state *state, size_t icmp_size,
 	}
 }
 
+/**
+ * @param ctx - ICMP context containing error packet information
+ * @param error_message - the error message to display
+ * 
+ * Prints formatted ICMP error message with sender address information
+ */
+void print_icmp_error(t_icmp_context *ctx, const char *error_message) {
+	char hostname[NI_MAXHOST];
+	char sender_ip[INET_ADDRSTRLEN];
+	struct sockaddr_in *from_addr = (struct sockaddr_in*)ctx->from;
+	
+	inet_ntop(AF_INET, &from_addr->sin_addr, sender_ip, INET_ADDRSTRLEN);
+	
+	if (getnameinfo((struct sockaddr*)from_addr, sizeof(*from_addr), 
+					hostname, sizeof(hostname), NULL, 0, 0) == 0) {
+		printf("From %s (%s): icmp_seq=%d %s\n", 
+			   hostname, sender_ip, ctx->sequence, error_message);
+	} else {
+		printf("From %s: icmp_seq=%d %s\n", 
+			   sender_ip, ctx->sequence, error_message);
+	}
+}
+
 void print_usage(char *arg, char opt) {
 	(void)opt;
 	//fprintf(stderr, "%s: usage error: Unknown option '-%c'\n", arg, opt);

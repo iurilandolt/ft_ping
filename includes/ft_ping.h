@@ -24,6 +24,8 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 
+// #include <linux/ipv6.h>
+
 #ifndef NI_MAXHOST
 #define NI_MAXHOST 1025
 #endif
@@ -84,7 +86,8 @@ typedef struct s_ping_state {
 		struct timeval first_packet_time;
 		struct timeval last_packet_time;
 		int preload_sent;
-		int transmission_complete;  
+		int transmission_complete;
+		int errors;
 	} stats;
 	struct {
 		int verbose;     // -v flag
@@ -105,7 +108,6 @@ typedef struct s_icmp_context {
 	uint16_t sequence;
 	uint16_t expected_pid;
 	struct sockaddr_storage *from;
-	t_ping_state *state;
 } t_icmp_context;
 
 // signals
@@ -132,11 +134,10 @@ void cleanup_packets(t_ping_state *state);
 void fill_packet_data(t_ping_state *state, uint16_t sequence);
 uint16_t calculate_checksum(t_ping_state *state, uint16_t sequence);
 t_icmp_context create_icmp_context(char *buffer, ssize_t bytes_received, t_ping_state *state, struct sockaddr_storage *from);
-int is_icmp_error(uint8_t icmp_type, int family);
-int is_icmp_reply(uint8_t icmp_type, int family);
+int get_icmp_packet_type(uint8_t icmp_type, int family);
 int parse_icmp_reply(char *buffer, ssize_t bytes_received, t_ping_state *state, struct sockaddr_storage *from);
-int handle_icmp_errors(t_icmp_context *ctx);
-int handle_icmp_replies(t_icmp_context *ctx);
+int handle_icmp_errors(t_icmp_context *ctx, t_ping_state *state);
+int handle_icmp_replies(t_icmp_context *ctx, t_ping_state *state);
 // rtt 
 double calculate_rtt(char *buffer, struct iphdr *ip_header, size_t icmp_data_size, int family);
 void update_rtt_stats(t_ping_state *state, double rtt);
@@ -149,6 +150,7 @@ void print_stats(t_ping_state *state);
 void print_verbose_info(t_ping_state *state);
 void print_default_info(t_ping_state *state);
 void print_ping_reply(t_ping_state *state, size_t icmp_size, struct icmphdr *icmp_header, int ttl, double rtt);
+void print_icmp_error(t_icmp_context *ctx, const char *error_message);
 void print_usage(char *arg, char opt);
 
 #endif

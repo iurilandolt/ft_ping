@@ -188,7 +188,6 @@ t_icmp_context create_icmp_context(char *buffer, ssize_t bytes_received, t_ping_
 	t_icmp_context ctx = {
 		.buffer = buffer,
 		.bytes_received = bytes_received,
-		.state = state,
 		.from = from,
 		.ip_header = (state->conn.target_family == AF_INET) ? (struct iphdr*)buffer : NULL,
 		.icmp_header = (state->conn.target_family == AF_INET) ? 
@@ -203,28 +202,19 @@ t_icmp_context create_icmp_context(char *buffer, ssize_t bytes_received, t_ping_
 }
 
 
-int is_icmp_error(uint8_t icmp_type, int family) {
+int get_icmp_packet_type(uint8_t icmp_type, int family) {
 	if (family == AF_INET) {
-		return (icmp_type == ICMP_TIME_EXCEEDED || 
-				icmp_type == ICMP_DEST_UNREACH);
+		if (icmp_type == ICMP_ECHOREPLY) return 1; 
+		if (icmp_type == ICMP_TIME_EXCEEDED || icmp_type == ICMP_DEST_UNREACH) return 2; 
 	} else {
-		return (icmp_type == ICMP6_TIME_EXCEEDED || 
-				icmp_type == ICMP6_DST_UNREACH);
+		if (icmp_type == ICMP6_ECHO_REPLY) return 1; 
+		if (icmp_type == ICMP6_TIME_EXCEEDED || icmp_type == ICMP6_DST_UNREACH) return 2; 
 	}
+	return 0; 
 }
 
-
-int is_icmp_reply(uint8_t icmp_type, int family) {
-	if (family == AF_INET) {
-		return (icmp_type == ICMP_ECHOREPLY);
-	} else {
-		return (icmp_type == ICMP6_ECHO_REPLY);
-	}
-}
-
-int handle_icmp_errors(t_icmp_context *ctx) {
-	size_t error_min_size = sizeof(struct iphdr) + sizeof(struct icmphdr) + 
-							sizeof(struct iphdr) + sizeof(struct icmphdr);
+int handle_icmp_errors(t_icmp_context *ctx, t_ping_state *state) {
+	size_t error_min_size = sizeof(struct iphdr) + sizeof(struct icmphdr) * 2; // sizeof(struct ipv6hdr) * 2 + sizeof(struct icmp6_hdr) * 2;
 	if ((unsigned long)ctx->bytes_received < error_min_size) {
 		return 1;
 	}
@@ -235,38 +225,25 @@ int handle_icmp_errors(t_icmp_context *ctx) {
 	ctx->packet_id = ntohs(orig_icmp->un.echo.id);
 	ctx->sequence = ntohs(orig_icmp->un.echo.sequence);
 	
-	uint8_t expected_type = (ctx->state->conn.target_family == AF_INET) ? 
+	uint8_t expected_type = (state->conn.target_family == AF_INET) ? 
 							ICMP_ECHO : ICMP6_ECHO_REQUEST;
 	
 	if (orig_icmp->type != expected_type || ctx->packet_id != ctx->expected_pid) {
 		return 1;
 	}
 	
-	t_packet_entry *packet_entry = find_packet(ctx->state, ctx->sequence);
+	t_packet_entry *packet_entry = find_packet(state, ctx->sequence);
 	if (!packet_entry) {
 		return 1;
 	}
 	
-	char hostname[NI_MAXHOST];
-	char sender_ip[INET_ADDRSTRLEN];
-	struct sockaddr_in *from_addr = (struct sockaddr_in*)ctx->from;
+	print_icmp_error(ctx, "Time to live exceeded");
 	
-	inet_ntop(AF_INET, &from_addr->sin_addr, sender_ip, INET_ADDRSTRLEN);
-	
-	if (getnameinfo((struct sockaddr*)from_addr, sizeof(*from_addr), 
-					hostname, sizeof(hostname), NULL, 0, 0) == 0) {
-		printf("From %s (%s): icmp_seq=%d Time to live exceeded\n", 
-			   hostname, sender_ip, ctx->sequence);
-	} else {
-		printf("From %s: icmp_seq=%d Time to live exceeded\n", 
-			   sender_ip, ctx->sequence);
-	}
-	
-	remove_packet(ctx->state, ctx->sequence);
+	remove_packet(state, ctx->sequence);
 	return 0;
 }
 
-int handle_icmp_replies(t_icmp_context *ctx) {
+int handle_icmp_replies(t_icmp_context *ctx, t_ping_state *state) {
 	ctx->packet_id = ntohs(ctx->icmp_header->un.echo.id);
 	ctx->sequence = ntohs(ctx->icmp_header->un.echo.sequence);
 	
@@ -274,22 +251,23 @@ int handle_icmp_replies(t_icmp_context *ctx) {
 		return 1;
 	}
 	
-	t_packet_entry *packet_entry = find_packet(ctx->state, ctx->sequence);
+	t_packet_entry *packet_entry = find_packet(state, ctx->sequence);
 	if (!packet_entry) {
 		return 1;
 	}
 	
-	size_t icmp_size = (ctx->state->conn.target_family == AF_INET) ? 
+	size_t icmp_size = (state->conn.target_family == AF_INET) ? 
 					ctx->bytes_received - (ctx->ip_header->ihl * 4) : 
 					ctx->bytes_received;
 	size_t icmp_data_size = icmp_size - sizeof(struct icmphdr);
-	int ttl = (ctx->state->conn.target_family == AF_INET) ? ctx->ip_header->ttl : 64;
 	
-	double rtt = calculate_rtt(ctx->buffer, ctx->ip_header, icmp_data_size, ctx->state->conn.target_family);
-	update_rtt_stats(ctx->state, rtt);
-	print_ping_reply(ctx->state, icmp_size, ctx->icmp_header, ttl, rtt);
+	int ttl = (state->conn.target_family == AF_INET) ? ctx->ip_header->ttl : 64; // ((struct ipv6hdr*)ctx->buffer)->hop_limit
 	
-	remove_packet(ctx->state, ctx->sequence);
+	double rtt = calculate_rtt(ctx->buffer, ctx->ip_header, icmp_data_size, state->conn.target_family);
+	update_rtt_stats(state, rtt);
+	print_ping_reply(state, icmp_size, ctx->icmp_header, ttl, rtt);
+	
+	remove_packet(state, ctx->sequence);
 	return 0;
 }
 
@@ -313,12 +291,13 @@ int parse_icmp_reply(char *buffer, ssize_t bytes_received, t_ping_state *state, 
 	
 	t_icmp_context ctx = create_icmp_context(buffer, bytes_received, state, from);
 	
-	if (is_icmp_error(ctx.icmp_header->type, state->conn.target_family)) {
-		return handle_icmp_errors(&ctx);
-	} else if (is_icmp_reply(ctx.icmp_header->type, state->conn.target_family)) {
-		return handle_icmp_replies(&ctx);
-	} else {
-		return 1; 
+	switch (get_icmp_packet_type(ctx.icmp_header->type, state->conn.target_family)) {
+		case 1: // reply
+			return handle_icmp_replies(&ctx, state);
+		case 2: // error
+			return handle_icmp_errors(&ctx, state);
+		default: // unknown
+			return 1;
 	}
 }
 
