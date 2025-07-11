@@ -1,184 +1,104 @@
-# ft_ping - A Network Diagnostic Tool Implementation
+# ft_ping Documentation
 
-## Overview
-`ft_ping` is a custom implementation of the classic `ping` utility, designed to test network connectivity and measure round-trip times between hosts. This implementation supports both IPv4 and IPv6 protocols and demonstrates low-level network programming concepts including raw sockets, ICMP protocol handling, and packet timing.
+## Argument Parsing
 
-## Architecture & OSI Model Layers
+- **`-v`**: Verbose output - Shows detailed socket information and packet identifiers in output
+- **`-c <count>`**: Stop after sending count packets - Limits total packets sent, program exits after reaching this number
+- **`-s <size>`**: Set packet payload size - Controls payload size (excludes ICMP/IP headers), affects total packet size
+- **`-l <preload>`**: Send preload packets immediately - Sends multiple packets rapidly at start, then continues with normal 1-second intervals
+- **`-W <timeout>`**: Set timeout per packet in seconds - How long to wait for each packet response before considering it lost
+- **`-t <ttl>`**: Set Time-To-Live for packets - Maximum number of network hops before packet is discarded
+- **`-h`**: Show help/usage - Displays usage information and exits
+- **`<destination>`**: Target hostname or IP (required) - Target to ping, can be hostname (google.com) or IP address (8.8.8.8)
 
-### Layer 3 - Network Layer (IP)
-**What we handle:**
-- **DNS Resolution**: Converting hostnames (FQDNs) to IP addresses using `getaddrinfo()`
-- **IP Protocol Selection**: Automatic detection and handling of IPv4 vs IPv6
-- **Address Management**: Storing and managing both IPv4 and IPv6 addresses
+### Tools
+- **`getopt()`**: Standard POSIX function that processes command-line arguments systematically. It takes the argument count, argument vector, and an option string (`"vhc:s:l:W:t:"`) where letters represent valid options and colons indicate options that require arguments. `getopt()` returns each option character one by one, sets `optarg` to point to the option's argument (if any), and handles error cases like unknown options or missing required arguments. It automatically manages the `optind` global variable to track position in the argument list.
 
-**What the kernel handles:**
-- **IP Header Creation**: Kernel automatically adds IP headers (20 bytes for IPv4, 40 bytes for IPv6)
-- **Routing**: Kernel determines the best path to destination
-- **Fragmentation**: Kernel handles packet fragmentation if needed
+- **`parse_int_range()`**: Custom validation function that safely converts string arguments to integers using `strtol()` and enforces min/max boundaries. It performs comprehensive error checking: ensures the entire string is a valid number, detects overflow/underflow conditions, and validates the result falls within acceptable ranges.
 
-### Layer 3 - Network Layer (ICMP)
-**What we handle:**
-- **ICMP Header Creation**: Manual construction of ICMP echo request/reply headers
-- **Packet Identification**: Setting process ID and sequence numbers
-- **Checksum Calculation**: RFC 792 compliant checksum computation
-- **Packet Tracking**: Maintaining sent packet list for reply matching
+## Host Resolution
 
-### Layer 2 & 1 - Data Link & Physical
-**Completely handled by kernel and hardware:**
-- Ethernet framing, MAC addresses, physical transmission
+The `resolveHost()` Convert user-provided hostname or IP address into network operations format suitable for. 
 
-## Core Components
+### Key Functions
+- **`getaddrinfo()`**: DNS Resolution. Takes a hostname/IP string and service name, returning a linked list of address structures. 
 
-### 1. Argument Parsing (`io.c`)
-```c
-// Command line options with getopt()
-getopt(argc, argv, "vc:s:l:W:")
+- **`inet_ntop()`**: Converts binary network addresses back to human-readable string format. Used to create the display string that shows the resolved IP address in program output.
+
+## Socket Creation
+
+The `createSocket()` establishes raw network sockets for ICMP communication. Creates both IPv4 and IPv6 sockets, sets non-blocking mode, and configures TTL.
+
+### Key Functions
+- **`socket()`**: Creates raw sockets for ICMP (IPv4) and ICMPv6 (IPv6) protocols.
+- **`fcntl()`**: Sets sockets to non-blocking mode for asynchronous operation.
+- **`setsockopt()`**: Configures TTL (IP_TTL/IPV6_UNICAST_HOPS) for packet hop limits.
+
+## Packet System
+
 ```
-- `v`: Verbose output (flag, no argument)
-- `c:`: Count limit (requires argument)
-- `s:`: Packet size (requires argument)
-- `l:`: Preload packets (requires argument)
-- `W:`: Timeout in seconds (requires argument)
-
-### 2. Network Resolution (`network.c`)
-```c
-// DNS resolution using getaddrinfo()
-int resolveHost(t_ping_state *state, char **argv)
+[ IP Header (20 bytes) ][ ICMP Header (8 bytes) ][ Payload Data (variable) ]
+    	Kernel           	ft_ping           			ft_ping
 ```
-- Converts FQDN to IP address (one-time DNS lookup)
-- Supports both IPv4 and IPv6 addresses
-- **Important**: No reverse DNS lookup on packet replies (per requirements)
 
-### 3. Socket Creation (`network.c`)
-```c
-// Raw socket creation for both protocols
-socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);      // IPv4
-socket(AF_INET6, SOCK_RAW, IPPROTO_ICMPV6);   // IPv6
-```
-- Raw sockets allow direct ICMP packet construction
-- Non-blocking sockets for asynchronous I/O
-
-### 4. Packet Management (`packet.c`)
-
-#### Packet Structure
 ```c
 typedef struct s_ping_pkg {
-    struct icmphdr header;  // 8 bytes ICMP header
-    char msg[];            // Variable size data payload
+    struct icmphdr  header;  // ICMP header (8 bytes)
+    char           msg[];    // Variable payload data
 } t_ping_pkg;
 ```
 
-#### ICMP Header Fields
-- **Type**: `ICMP_ECHO` (IPv4) or `ICMP6_ECHO_REQUEST` (IPv6)
-- **Code**: Always 0 for echo requests
-- **Checksum**: Calculated using RFC 792 algorithm
-- **Identifier**: Process ID for packet ownership
-- **Sequence**: Incremental number for packet ordering
+- **Kernel**: Automatically adds IP header (source/dest IP, protocol, TTL, checksum)
+- **Our Code**: Constructs ICMP header + payload, calculates ICMP checksum
 
-#### Packet Data Payload
-- **Timestamp**: `struct timeval` for RTT calculation
-- **Pattern Data**: Repeating pattern `0x10 + (i % 48)` for remaining space
+### Packet Construction (`create_packet`)
+1. **ICMP Header Setup**:
+   - `type`: ICMP_ECHO (IPv4) or ICMP6_ECHO_REQUEST (IPv6)
+   - `id`: Process ID for packet identification
+   - `sequence`: Incremental sequence number
+   - `checksum`: RFC 792 Internet checksum
 
-### 5. Packet Size Calculation
+2. **Payload Data**:
+   - **Timestamp**: `struct timeval` at start for RTT calculation
+   - **Pattern Data**: Repeating pattern (0x10 + offset) for packet validation
 
-#### IPv4 Packets
-```
-User Data (56) + ICMP Header (8) + IP Header (20) = 84 bytes total
-Display: "PING host (IP) 56(84) bytes of data"
-```
+### Key Functions
+- **`gettimeofday()`**: Embeds send timestamp in packet payload for RTT measurement
+- **`calculate_checksum()`**: Computes RFC 792 checksum for packet integrity
+- **`htons()`**: Converts host byte order to network byte order for headers
 
-#### IPv6 Packets
-```
-User Data (56) + ICMP Header (8) + IP Header (40) = 104 bytes total
-Display: "PING host (IP) 56 data bytes" (IP header not shown in display)
-```
+## Event Loop & Polling System
 
-### 6. Polling System (`poll.c`)
 ```c
-// Event-driven I/O with poll()
-int poll_result = poll(fds, 2, poll_timeout);
+struct pollfd fds[2];  
 ```
-- Monitors both IPv4 and IPv6 sockets simultaneously
-- Dynamic timeout calculation based on send intervals
-- Handles packet reception without blocking
+- **fds[0]**: IPv4 ICMP socket (`state->conn.ipv4.sockfd`)
+- **fds[1]**: IPv6 ICMP socket (`state->conn.ipv6.sockfd`)
+- **events**: `POLLIN` - Monitor for incoming data
+- **revents**: Reset to 0, filled by poll() with actual events
 
-### 7. Packet Transmission Flow
+### Timeout Calculation 
 
-#### Sending Process
-1. **Timing Check**: Ensure 1-second interval between packets
-2. **Packet Creation**: Allocate and initialize ICMP packet
-3. **Data Population**: Fill with timestamp and pattern
-4. **Checksum**: Calculate and set ICMP checksum
-5. **Transmission**: Send via `sendto()` through raw socket
-6. **Tracking**: Add to sent packet list for reply matching
+1. **Active Transmission**: Returns milliseconds until next 1-second send interval
 
-#### Receiving Process
-1. **Socket Monitoring**: `poll()` detects incoming data
-2. **Packet Reception**: `recvfrom()` receives raw packet
-3. **Header Parsing**: Extract IP header (IPv4 only) and ICMP header
-4. **Validation**: Verify packet type, ID, and sequence
-5. **RTT Calculation**: Compare timestamps for round-trip time
-6. **Statistics Update**: Update min/max/avg RTT values
-7. **Cleanup**: Remove packet from sent list
 
-### 8. Signal Handling (`signals.c`)
-```c
-// Graceful shutdown on SIGINT (Ctrl+C)
-void handleSignals(int signum, siginfo_t *info, void *ptr)
-```
-- Captures termination signals
-- Ensures proper cleanup and statistics display
+2. **Transmission Complete**: Returns 100ms timeout for cleanup phase
 
-## Key Implementation Details
 
-### Packet Verification by Kernel
-- **Checksum Validation**: Kernel verifies ICMP checksums
-- **Protocol Filtering**: Only delivers packets matching our protocol
-- **Source Validation**: Ensures packets come from expected source
+3. **Preload Phase**: Returns 0 for immediate sending
 
-### FQDN Handling
-- **Forward Resolution**: Done once at startup (`getaddrinfo()`)
-- **No Reverse Lookup**: Packet replies show IP addresses, not hostnames
-- **Compliance**: Follows requirement to avoid DNS resolution in packet returns
 
-### Memory Management
-- **Packet Tracking**: Linked list of sent packets for timeout handling
-- **Dynamic Allocation**: Packets allocated per transmission
-- **Cleanup**: Proper deallocation on timeouts and replies
+### Main Event Loop
+The program runs until all packets are sent AND all responses received (or timed out):
 
-### Error Handling
-- **Socket Errors**: Graceful handling of network failures
-- **Timeout Management**: Remove expired packets from tracking
-- **Signal Safety**: Clean shutdown on interruption
+1. **Send Phase**: Attempt to send a ping packet if timing allows
+2. **Calculate Timeout**: Determine how long to wait for network activity
+3. **Poll for Events**: Block until data arrives on either socket or timeout expires
+4. **Handle Results**:
+   - **Data Available**: Process incoming ICMP response
+   - **Timeout**: Clean up packets that exceeded response timeout
+   - **Error**: Break loop on unrecoverable errors
 
-## Usage Examples
 
-```bash
-# Basic ping
-./ft_ping google.com
 
-# Verbose output with packet details
-./ft_ping -v google.com
 
-# Limited packet count
-./ft_ping -c 5 google.com
-
-# Custom packet size
-./ft_ping -s 1000 google.com
-
-# Preload packets and custom timeout
-./ft_ping -l 3 -W 2 google.com
-```
-
-## Statistics Output
-```
---- google.com ping statistics ---
-5 packets transmitted, 5 received, 0% packet loss, time 4001ms
-rtt min/avg/max = 14.123/15.456/17.890 ms
-```
-
-## Technical Requirements
-- **Root Privileges**: Required for raw socket creation
-- **IPv4/IPv6 Support**: Automatic protocol detection
-- **RFC Compliance**: Follows ICMP standards (RFC 792/4443)
-- **POSIX Compliance**: Uses standard system calls and libraries
