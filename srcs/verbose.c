@@ -17,8 +17,8 @@ void print_stats(t_ping_state *state) {
 		}
 	}
 
-	printf("\n--- %s ping statistics ---\n", state->conn.target);
-	printf("%ld packets transmitted, %ld received, %.0f%% packet loss, time %.0fms\n",
+	fprintf(stdout, "\n--- %s ping statistics ---\n", state->conn.target);
+	fprintf(stdout, "%ld packets transmitted, %ld received, %.0f%% packet loss, time %.0fms\n",
 		   state->stats.packets_sent, state->stats.packets_received,
 		   ((double)(state->stats.packets_sent - state->stats.packets_received) / 
 			state->stats.packets_sent) * 100.0, total_time);
@@ -27,9 +27,12 @@ void print_stats(t_ping_state *state) {
 		state->stats.avg_rtt = state->stats.sum_rtt / state->stats.packets_received;
 		if (state->stats.avg_rtt > 0) {
 			double mdev = calculate_median_deviation(state);
-			printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n", 
+			fprintf(stdout, "rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n", 
 				state->stats.min_rtt, state->stats.avg_rtt, state->stats.max_rtt, mdev); 
 		}
+	}
+	if (state->stats.errors > 0) {
+		fprintf(stdout, "+%d errors.\n", state->stats.errors);
 	}
 }
 
@@ -51,15 +54,15 @@ void print_verbose_info(t_ping_state *state) {
 							  (socktype == SOCK_DGRAM) ? "SOCK_DGRAM" : "UNKNOWN";
 	
 	if (state->conn.target_family == AF_INET) {
-		printf("ping: sock4.fd: %d (socktype: %s), sock6.fd: %d (socktype: SOCK_RAW), hints.ai_family: AF_UNSPEC\n",
+		fprintf(stdout, "ping: sock4.fd: %d (socktype: %s), sock6.fd: %d (socktype: SOCK_RAW), hints.ai_family: AF_UNSPEC\n",
 			   state->conn.ipv4.sockfd, socktype_str, state->conn.ipv6.sockfd);
 	} else {
-		printf("ping: sock4.fd: %d (socktype: SOCK_RAW), sock6.fd: %d (socktype: %s), hints.ai_family: AF_UNSPEC\n",
+		fprintf(stdout, "ping: sock4.fd: %d (socktype: SOCK_RAW), sock6.fd: %d (socktype: %s), hints.ai_family: AF_UNSPEC\n",
 			   state->conn.ipv4.sockfd, state->conn.ipv6.sockfd, socktype_str);
 	}
 	
 	const char *family_str = (state->conn.target_family == AF_INET) ? "AF_INET" : "AF_INET6";
-	printf("\nai->ai_family: %s, ai->ai_canonname: '%s'\n",
+	fprintf(stdout, "\nai->ai_family: %s, ai->ai_canonname: '%s'\n",
 		   family_str, state->conn.target);
 }
 
@@ -80,11 +83,11 @@ void print_default_info(t_ping_state *state) {
 	
 	if (state->conn.target_family == AF_INET) {
 		size_t total_with_ip = data_size + icmp_header_size + 20;
-		printf("PING %s (%s) %zu(%zu) bytes of data.\n", 
+		fprintf(stdout, "PING %s (%s) %zu(%zu) bytes of data.\n", 
 			state->conn.target, addr_str, 
 			data_size, total_with_ip);
 	} else {
-		printf("PING %s (%s) %zu data bytes\n", 
+		fprintf(stdout, "PING %s (%s) %zu data bytes\n", 
 			state->conn.target, addr_str, data_size);
 	}
 }
@@ -141,10 +144,10 @@ void print_icmp_error(t_icmp_context *ctx, const char *error_message) {
 	
 	if (getnameinfo((struct sockaddr*)from_addr, sizeof(*from_addr), 
 					hostname, sizeof(hostname), NULL, 0, 0) == 0) {
-		printf("From %s (%s): icmp_seq=%d %s\n", 
+		fprintf(stdout, "From %s (%s): icmp_seq=%d %s\n", 
 			   hostname, sender_ip, ctx->sequence, error_message);
 	} else {
-		printf("From %s: icmp_seq=%d %s\n", 
+		fprintf(stdout, "From %s: icmp_seq=%d %s\n", 
 			   sender_ip, ctx->sequence, error_message);
 	}
 }

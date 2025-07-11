@@ -48,6 +48,7 @@ int resolveHost(t_ping_state *state, char **argv) {
  * @return 0 on success, 1 on failure
  * 
  * Creates IPv4 and IPv6 raw sockets and sets them to non-blocking mode
+ * sets TTL option for ipv4 and hop limit for ipv6
  */
 int createSocket(t_ping_state *state, char **argv) {
 	int flags;
@@ -64,14 +65,12 @@ int createSocket(t_ping_state *state, char **argv) {
 	flags = fcntl(state->conn.ipv6.sockfd, F_GETFL, 0);
 	fcntl(state->conn.ipv6.sockfd, F_SETFL, flags | O_NONBLOCK);
 	
-	// Set TTL for IPv4
 	if (setsockopt(state->conn.ipv4.sockfd, IPPROTO_IP, IP_TTL, 
 				   &state->opts.ttl, sizeof(state->opts.ttl)) < 0) {
 		perror("setsockopt IP_TTL");
 		return 1;
 	}
 	
-	// Set hop limit for IPv6 (equivalent of TTL)
 	if (setsockopt(state->conn.ipv6.sockfd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, 
 				   &state->opts.ttl, sizeof(state->opts.ttl)) < 0) {
 		perror("setsockopt IPV6_UNICAST_HOPS");

@@ -38,3 +38,118 @@ struct icmphdr {
         }                frag;
     }                    un;
 };
+
+
+OUTGOING PING PACKET:
+   [ICMP Header only - no IP header when using raw socket]
+   
+   struct icmphdr {
+       type     = ICMP_ECHO (8)                // Echo Request
+       code     = 0                           // Always 0 for echo
+       checksum = calculated_value            // RFC 792 checksum
+       un.echo.id = htons(getpid())          // Our process ID
+       un.echo.sequence = htons(seq_num)     // Sequence number (1, 2, 3...)
+   }
+   [Data payload: timestamp + pattern data]
+
+SUCCESS REPLY BUFFER:
+   For IPv4:
+   [IP Header] [ICMP Header] [Data]
+   
+   struct iphdr {
+       version  = 4
+       ihl      = 5 (20 bytes)
+       tos      = 0
+       tot_len  = total packet size
+       id       = varies
+       frag_off = varies
+       ttl      = varies (64, 117, etc.)    
+       protocol = ICMP (1)
+       check    = checksum
+       saddr    = target IP (8.8.8.8)
+       daddr    = our IP
+   }
+   
+   struct icmphdr {
+       type     = ICMP_ECHOREPLY (0)         // Echo Reply
+       code     = 0
+       checksum = varies
+       un.echo.id = our_pid                 // Matches what we sent
+       un.echo.sequence = seq_num           // Matches what we sent
+   }
+   [Data: our original timestamp + pattern]
+
+ERROR BUFFER:
+   [Outer IP Header] [ICMP Error Header] [Original IP Header] [Original ICMP Header] [Some original data]
+   
+   Outer IP Header:
+   struct iphdr {
+       // Header from router/host sending the error
+       saddr    = router IP (192.168.1.1)   // <-- This is who sent error
+       daddr    = our IP
+       protocol = ICMP (1)
+       ttl      = varies
+   }
+   
+   ICMP Error Header:
+   struct icmphdr {
+       type     = ICMP_TIME_EXCEEDED (11) or ICMP_DEST_UNREACH (3)
+       code     = varies (0 for TTL exceeded, others for unreachable)
+       checksum = varies
+   }
+   
+   Embedded Original IP Header:
+   struct iphdr {
+       // Copy of our original packet's IP header
+       saddr    = our IP
+       daddr    = target IP (8.8.8.8)
+       protocol = ICMP (1)
+   }
+   
+   Embedded Original ICMP Header:
+   struct icmphdr {
+       type     = ICMP_ECHO (8)              // Our original echo request
+       code     = 0
+       un.echo.id = our_pid                 // <-- We validate this
+       un.echo.sequence = seq_num           // <-- We validate this
+   }
+   [At least 8 bytes of original data]
+
+=== VALIDATION LOGIC ===
+
+For Success Replies:
+- Check: icmp_header->type == ICMP_ECHOREPLY or ICMP6_ECHO_REPLY
+- Check: icmp_header->un.echo.id == our_pid
+- Check: sequence number exists in our sent_packets list
+
+For Error Messages:  
+- Check: icmp_header->type == ICMP_TIME_EXCEEDED or ICMP_DEST_UNREACH
+- Extract embedded packet from error message
+- Check: orig_icmp->type == ICMP_ECHO (our original request)
+- Check: orig_icmp->un.echo.id == our_pid
+- Check: sequence number exists in our sent_packets list
+
+
+
+
+
+
+IPv6 EQUIVALENTS
+
+IPv6 Header (/usr/include/netinet/ipv6.h):
+struct ipv6hdr {
+    u_int8_t   version:4,      // IP version (6)
+               priority:4;     // Traffic class
+    u_int8_t   flow_lbl[3];    // Flow label
+    u_int16_t  payload_len;    // Payload length
+    u_int8_t   nexthdr;        // Next header (ICMPv6 = 58)
+    u_int8_t   hop_limit;      // Hop limit (TTL equivalent)
+    struct in6_addr saddr;     // Source address (128 bits)
+    struct in6_addr daddr;     // Destination address (128 bits)
+};
+
+ICMPv6 Types:
+- ICMP6_ECHO_REQUEST (128)   // What we send
+- ICMP6_ECHO_REPLY (129)     // Success reply
+- ICMP6_TIME_EXCEEDED (3)    // Hop limit exceeded
+- ICMP6_DST_UNREACH (1)      // Destination unreachable
