@@ -1,45 +1,61 @@
 #include "../includes/ft_ping.h"
 
+static void ready(t_ping_state *state) {
+	setupSignals(state);
+	memset(&state->stats, 0, sizeof(state->stats));
+	print_verbose_info(state);
+	print_default_info(state);
+}
+
+
+static void end(t_ping_state *state) {
+	print_stats(state);
+	cleanup_packets(state);
+	close(state->conn.ipv4.sockfd);
+	close(state->conn.ipv6.sockfd);
+}
+
 int main(int argc, char **argv) {
 	t_ping_state state;
+	struct pollfd fds[2];
+	uint16_t sequence = 1;
 	int ret = 0;
-	
-	if (
-		parseArgs(&state, argc, argv) ||
+
+	if (parseArgs(&state, argc, argv) ||
 		resolveHost(&state, argv) || 
 		createSocket(&state, argv) ||
-		allocate_packet(&state)) {
+		init_packet_system(&state)) {
 		return ret = 1;
 	}
 
-	setupSignals(&state);
+	ready(&state);
+
+	int target_sockfd = setupPoll(&state, fds);
 	
-	memset(&state.stats, 0, sizeof(state.stats));
-	gettimeofday(&state.stats.start_time, NULL);
-	
-	print_verbose_info(&state);
-	print_default_info(&state);
-	
-	uint16_t sequence = 1;
-	while (state.opts.count == -1 || sequence <= state.opts.count) {
-		create_icmp_packet(&state, sequence);
-		if ((ret = send_ping(&state)) == 0) {
-			state.stats.packets_sent++;
-			if ((ret = receive_ping(&state, sequence)) == 0) {
-				state.stats.packets_received++;
-			}
+	while (!state.stats.transmission_complete || state.sent_packets != NULL) {
+		ret = send_ping(&state, &sequence, target_sockfd);
+		int poll_timeout = get_next_poll_timeout(&state);
+		if (poll_timeout < 0) {
+			break;
 		}
-		sequence++;
-		// Sleep 1 second between pings (unless preload)
-		if ((state.opts.count == -1 || sequence <= state.opts.count) && 
-			(state.opts.preload == 0 || sequence > state.opts.preload)) {
-			sleep(1);
+		
+		int poll_result = poll(fds, 2, poll_timeout);
+		if (poll_result > 0) {
+			for (int i = 0; i < 2; i++) {
+				if (fds[i].revents & POLLIN) {
+					if ((ret = receive_packet(&state, fds[i].fd)) == 0) {
+						state.stats.packets_received++;
+					}
+					break;
+				}
+			}
+		} else if (poll_result == 0) {
+			handle_timeouts(&state);
+		} else if (poll_result < 0 && errno != EINTR) {
+			fprintf(stderr, "poll: %s\n", strerror(errno));
+			break;
 		}
 	}
-	
-	print_stats(&state);
-	free_packet(&state);
-	
-	close(state.conn.sockfd);
-	return ret;
+	end(&state);
+	return (state.stats.packets_received == 0) ? 1 : ret;
 }

@@ -1,0 +1,178 @@
+#include "../includes/ft_ping.h"
+
+/**
+ * @param state - ping state to initialize packet system for
+ * @return 0 on success
+ * 
+ * Initializes packet tracking system and adjusts packet size for headers
+ */
+int init_packet_system(t_ping_state *state) {
+	state->sent_packets = NULL;
+	state->stats.rtt_list = NULL;
+	size_t header_size = (state->conn.target_family == AF_INET) ? 
+						sizeof(struct icmphdr) : 
+						sizeof(struct icmp6_hdr);    
+	state->opts.psize += header_size; 
+	return 0;
+}
+
+/**
+ * @param state - ping state containing packet list and connection info
+ * @param sequence - sequence number for the new packet
+ * @return pointer to created packet entry, NULL on failure
+ * 
+ * Creates new ICMP packet with specified sequence number and adds to tracking list
+ */
+t_packet_entry* create_packet(t_ping_state *state, uint16_t sequence) {
+	t_packet_entry *entry = malloc(sizeof(t_packet_entry));
+	if (!entry) {
+		fprintf(stderr, "malloc failed for packet entry\n");
+		return NULL;
+	}
+	entry->packet = malloc(state->opts.psize);
+	if (!entry->packet) {
+		fprintf(stderr, "malloc failed for packet %d\n", sequence);
+		free(entry);
+		return NULL;
+	}
+	
+	entry->sequence = sequence;
+	entry->next = state->sent_packets;
+	state->sent_packets = entry;
+	
+	struct icmphdr *icmp = &entry->packet->header;
+	
+	if (state->conn.target_family == AF_INET) {
+		state->conn.ipv4.pid = getpid();
+		icmp->type = ICMP_ECHO;
+		icmp->un.echo.id = htons(state->conn.ipv4.pid);
+	} else {
+		state->conn.ipv6.pid = getpid();
+		icmp->type = ICMP6_ECHO_REQUEST;
+		icmp->un.echo.id = htons(state->conn.ipv6.pid);
+	}
+	
+	icmp->code = 0;
+	icmp->un.echo.sequence = htons(sequence);
+	icmp->checksum = 0;
+	fill_packet_data(state, sequence);
+	icmp->checksum = calculate_checksum(state, sequence);
+	
+	return entry;
+}
+
+/**
+ * @param state - ping state containing packet list
+ * @param sequence - sequence number to search for
+ * @return pointer to packet entry if found, NULL otherwise
+ * 
+ * Searches for packet entry with specified sequence number in tracking list
+ */
+t_packet_entry* find_packet(t_ping_state *state, uint16_t sequence) {
+	t_packet_entry *current = state->sent_packets;
+	while (current) {
+		if (current->sequence == sequence) {
+			return current;
+		}
+		current = current->next;
+	}
+	return NULL;
+}
+
+/**
+ * @param state - ping state containing packet list
+ * @param sequence - sequence number of packet to remove
+ * 
+ * Removes and frees packet entry with specified sequence number from tracking list
+ */
+void remove_packet(t_ping_state *state, uint16_t sequence) {
+	t_packet_entry **current = &state->sent_packets;
+	while (*current) {
+		if ((*current)->sequence == sequence) {
+			t_packet_entry *to_remove = *current;
+			*current = (*current)->next;
+			free(to_remove->packet);
+			free(to_remove);
+			return;
+		}
+		current = &(*current)->next;
+	}
+}
+
+/**
+ * @param state - ping state containing packet list
+ * 
+ * Frees all remaining packets in the tracking list and resets list pointer
+ */
+void cleanup_packets(t_ping_state *state) {
+	t_packet_entry *current = state->sent_packets;
+	while (current) {
+		t_packet_entry *next = current->next;
+		free(current->packet);
+		free(current);
+		current = next;
+	}
+	cleanup_rtt_list(state);
+	state->sent_packets = NULL;
+}
+
+/**
+ * @param state - ping state containing packet options
+ * @param sequence - sequence number of packet to fill
+ * 
+ * Fills packet data payload with timestamp and pattern data
+ */
+void fill_packet_data(t_ping_state *state, uint16_t sequence) {
+	t_packet_entry *entry = find_packet(state, sequence);
+	if (!entry) return;
+	
+	size_t icmp_header_size = (state->conn.target_family == AF_INET) ? 
+							 sizeof(struct icmphdr) : 
+							 sizeof(struct icmp6_hdr);
+	size_t data_size = state->opts.psize - icmp_header_size;
+	size_t start_index = 0;
+	
+	if (data_size >= sizeof(struct timeval)) {
+		struct timeval tv;
+		gettimeofday(&tv, NULL);
+		memcpy(&entry->packet->msg, &tv, sizeof(tv));
+		start_index = sizeof(struct timeval);
+	}
+	
+	for (size_t i = start_index; i < data_size; i++) {
+		entry->packet->msg[i] = 0x10 + (i % 48);
+	}
+}
+
+/**
+ * @param state - ping state containing packet list and size info
+ * @param sequence - sequence number of packet to calculate checksum for
+ * @return calculated checksum value, 0 if packet not found
+ * 
+ * Calculates RFC 792 Internet checksum for ICMP packet
+ */
+uint16_t calculate_checksum(t_ping_state *state, uint16_t sequence) {
+	t_packet_entry *entry = find_packet(state, sequence);
+	if (!entry) return 0;
+	
+	uint16_t *ptr = (uint16_t*)entry->packet;
+	int bytes = state->opts.psize;
+	uint32_t sum = 0;
+	
+	while (bytes > 1) {
+		sum += *ptr++;
+		bytes -= 2;
+	}
+	
+	if (bytes == 1) {
+		sum += *(uint8_t*)ptr;
+	}
+	
+	while (sum >> 16) {
+		sum = (sum & 0xFFFF) + (sum >> 16);
+	}
+	
+	return ~sum;
+}
+
+
